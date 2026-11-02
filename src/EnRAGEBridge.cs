@@ -1290,7 +1290,7 @@ namespace EnRAGEPlayerFactionExtension
                 IDictionary liveCamps = GetField(MainInstance, "_liveCamps") as IDictionary;
                 if (liveCamps != null)
                 {
-                    object despawn = MainInstance.GetType().GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    MethodInfo despawn = MainInstance.GetType().GetMethods(InstanceFlags).FirstOrDefault(m =>
                         m.Name == "DespawnCamp" && m.GetParameters().Length == 2 && m.GetParameters()[1].ParameterType == typeof(bool));
                     if (despawn != null)
                     {
