@@ -1,0 +1,5 @@
+C:\Users\Alex\Desktop\EnRAGEPlayerFactionExtension\obj\Release\net48\EnRAGEPlayerFactionExtension.csproj.AssemblyReference.cache
+C:\Users\Alex\Desktop\EnRAGEPlayerFactionExtension\obj\Release\net48\EnRAGEPlayerFactionExtension.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Alex\Desktop\EnRAGEPlayerFactionExtension\obj\Release\net48\EnRAGEPlayerFactionExtension.AssemblyInfoInputs.cache
+C:\Users\Alex\Desktop\EnRAGEPlayerFactionExtension\obj\Release\net48\EnRAGEPlayerFactionExtension.AssemblyInfo.cs
+C:\Users\Alex\Desktop\EnRAGEPlayerFactionExtension\obj\Release\net48\EnRAGEPlayerFactionExtension.csproj.CoreCompileInputs.cache

@@ -1,0 +1,12 @@
+; Copy this file to scripts/EnRAGEPlayerFactionExtension.ini.
+; Coordinates are a default near Beecher's Hope. Adjust them in-game if the founder appears
+; in the wrong spot for your game build / story state.
+FounderX=-1641.797
+FounderY=-1399.678
+FounderZ=82.804
+FounderHeading=90.0
+FounderModel=U_M_M_Rwfrancher_01
+SpawnDistance=300.0
+InteractionDistance=3.0
+; This extension uses enRAGE's own hold prompt when available.
+FounderPrompt=Fundar una banda

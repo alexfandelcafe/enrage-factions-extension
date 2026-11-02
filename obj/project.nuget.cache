@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "4STV3QlQQqU=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Alex\\Desktop\\EnRAGEPlayerFactionExtension\\EnRAGEPlayerFactionExtension.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Alex\\.nuget\\packages\\lib.harmony\\2.4.3\\lib.harmony.2.4.3.nupkg.sha512"
+  ],
+  "logs": []
+}
