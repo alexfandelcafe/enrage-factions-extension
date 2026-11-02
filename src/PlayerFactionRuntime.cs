@@ -2653,8 +2653,8 @@ namespace EnRAGEPlayerFactionExtension
                     !IsCampPedSpeaking(first.Ped) && !IsCampPedSpeaking(second.Ped) &&
                     first.DefensiveTargetHandle == 0 && second.DefensiveTargetHandle == 0)
                 {
-                    string[] replies = { "GENERIC_HI", "GENERIC_THANKS", "GENERIC_BYE" };
-                    PlayCampSpeech(second.Ped, replies[_campScenarioRandom.Next(replies.Length)]);
+                    string[] speechReplies = { "GENERIC_HI", "GENERIC_THANKS", "GENERIC_BYE" };
+                    PlayCampSpeech(second.Ped, speechReplies[_campScenarioRandom.Next(speechReplies.Length)]);
                 }
                 _pendingCampReplyHandle = 0;
                 _pendingCampInitiatorHandle = 0;
@@ -2672,14 +2672,14 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             CampboundRosterMember firstMember = nearby[_campScenarioRandom.Next(nearby.Count)];
-            List<CampboundRosterMember> replies = nearby.Where(m => m.Handle != firstMember.Handle &&
+            List<CampboundRosterMember> replyCandidates = nearby.Where(m => m.Handle != firstMember.Handle &&
                 m.Ped.Position.DistanceTo(firstMember.Ped.Position) <= 12f).ToList();
-            if (replies.Count == 0)
+            if (replyCandidates.Count == 0)
             {
                 _nextCampConversationAt = Game.GameTime + 8000;
                 return;
             }
-            CampboundRosterMember secondMember = replies[_campScenarioRandom.Next(replies.Count)];
+            CampboundRosterMember secondMember = replyCandidates[_campScenarioRandom.Next(replyCandidates.Count)];
             string[] openers = { "GENERIC_HOWS_IT_GOING", "GENERIC_HI", "GENERIC_WHATS_UP" };
             string opener = openers[_campScenarioRandom.Next(openers.Length)];
             if (PlayCampSpeech(firstMember.Ped, opener))
