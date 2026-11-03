@@ -3152,9 +3152,9 @@ namespace EnRAGEPlayerFactionExtension
                     return false; // founder NPC only exposes our own prompt.
                 }
 
-                // Companion deliberately suppresses all of enRAGE's greetings/insults for its
-                // recruited peds. Player-camp residents have their own safe social prompt/menu,
-                // so intercept this before Companion's lower-priority prefix runs.
+                // Player-camp residents should use RDR2's native greet/antagonize interaction.
+                // Suppress enRAGE's additional social prompt and intercept this before Companion's
+                // generic-recruit prefix can replace the native interaction.
                 if (Runtime != null && Runtime.IsCampManagerSocialTarget(target.Handle, player))
                 {
                     MethodInfo hideManager = __instance.GetType().GetMethods(Flags)
@@ -3172,7 +3172,7 @@ namespace EnRAGEPlayerFactionExtension
                         .FirstOrDefault(m => m.Name == "UpdateHatAnim" && m.GetParameters().Length == 1 &&
                                              m.GetParameters()[0].ParameterType == typeof(Ped));
                     if (hat != null) hat.Invoke(__instance, new object[] { player });
-                    return false;
+                    return false; // The game handles native greet/antagonize input.
                 }
                 return true;
             }
