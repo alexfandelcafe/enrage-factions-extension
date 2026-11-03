@@ -104,14 +104,6 @@ namespace EnRAGEPlayerFactionExtension
         private bool _loggedMissingPromptApi;
         private bool _factionRegistered;
         private bool _factionMenuOpen;
-        private bool _campMemberMenuOpen;
-        private int _campMemberMenuIndex;
-        private int _campMemberMenuHandle;
-        private string _campMemberMenuRosterId = string.Empty;
-        private int _campMemberPrompt;
-        private int _campMemberPromptGroup;
-        private int _campMemberPromptTargetHandle;
-        private bool _campMemberPromptArmed = true;
         private int _nextCampVisualSyncAt;
         private int _nextCampDefenceScanAt;
         private int _nextCampConversationAt;
@@ -281,12 +273,6 @@ namespace EnRAGEPlayerFactionExtension
                 UpdateFactionMenu();
                 return;
             }
-            if (_campMemberMenuOpen)
-            {
-                UpdateCampMemberMenu();
-                return;
-            }
-
             if (_faction.Founded)
             {
                 FounderPatches.FounderHandle = 0;
@@ -380,7 +366,6 @@ namespace EnRAGEPlayerFactionExtension
                 if (_factionRegistered && campPlayer != null && campPlayer.Exists() && !campPlayer.IsDead)
                 {
                     MaintainCampManager(campPlayer);
-                    MaintainCampMemberInteraction(campPlayer);
                     MaintainCampDefence(campPlayer);
                     MaintainCampAmbientConversation(campPlayer);
                 }
@@ -388,8 +373,6 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     SetPromptVisible(_campManagerPrompt, false);
                     RemoveCampManagerPrompt();
-                    SetPromptVisible(_campMemberPrompt, false);
-                    RemoveCampMemberPrompt();
                 }
                 return;
             }
@@ -431,14 +414,12 @@ namespace EnRAGEPlayerFactionExtension
             // ScriptHook can reload scripts without restarting the game. Native prompts and
             // Harmony patches outlive this managed Script instance unless explicitly released.
             _factionMenuOpen = false;
-            _campMemberMenuOpen = false;
             _keyboardOpen = false;
             _campSelectionActive = false;
             _campTeleportPending = false;
             try { SetPromptVisible(_founderPrompt, false); } catch { }
             try { SetPromptVisible(_campManagerPrompt, false); } catch { }
             RemoveCampManagerPrompt();
-            RemoveCampMemberPrompt();
             RemovePrompt();
             bool ownsSharedHooks = object.ReferenceEquals(FounderPatches.Runtime, this);
             if (ownsSharedHooks)
@@ -541,7 +522,7 @@ namespace EnRAGEPlayerFactionExtension
 
         internal bool IsCampMemberSocialTarget(int handle, Ped player)
         {
-            if (handle == 0 || player == null || !player.Exists() || _campMemberMenuOpen ||
+            if (handle == 0 || player == null || !player.Exists() ||
                 _factionMenuOpen || _keyboardOpen || _campManager != null && _campManager.Exists() && _campManager.Handle == handle)
                 return false;
             CampboundRosterMember member;
@@ -2352,230 +2333,6 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        private void MaintainCampMemberInteraction(Ped player)
-        {
-            if (player == null || !player.Exists() || player.IsDead || player.IsOnMount || player.IsInVehicle ||
-                _campMemberMenuOpen || _factionMenuOpen || _keyboardOpen || player.IsInCombat)
-            {
-                SetPromptVisible(_campMemberPrompt, false);
-                return;
-            }
-
-            CampboundRosterMember candidate = _campboundRosterMembers.Values
-                .Where(m => m != null && m.Arrived && m.DefensiveTargetHandle == 0 && m.Ped != null && m.Ped.Exists() && !m.Ped.IsDead)
-                .OrderBy(m => m.Ped.Position.DistanceTo(player.Position))
-                .FirstOrDefault(m => m.Ped.Position.DistanceTo(player.Position) <= 2.8f);
-
-            if (candidate == null)
-            {
-                SetPromptVisible(_campMemberPrompt, false);
-                _campMemberPromptArmed = true;
-                return;
-            }
-
-            float memberDistance = candidate.Ped.Position.DistanceTo(player.Position);
-            if (_campManager != null && _campManager.Exists())
-            {
-                float managerDistance = _campManager.Position.DistanceTo(player.Position);
-                if (managerDistance <= 2.8f && managerDistance <= memberDistance)
-                {
-                    SetPromptVisible(_campMemberPrompt, false);
-                    return; // Give the nearer administrator prompt priority over a resident prompt.
-                }
-                if (memberDistance < managerDistance) SetPromptVisible(_campManagerPrompt, false);
-            }
-
-            // Keep an independent key fallback. Some released Companion peds do not return a
-            // valid ambient-prompt group after a script reload, although the entity itself is live.
-            // This fallback is restricted to the nearest registered camp resident within 2.8 m.
-            bool contextPressed = JustPressed(FounderPromptControl);
-            int group;
-            if (!TryGetPromptGroup(candidate.Ped, out group))
-            {
-                SetPromptVisible(_campMemberPrompt, false);
-                _campMemberPromptArmed = true;
-                if (contextPressed) OpenCampMemberMenu(candidate);
-                return;
-            }
-            if (_campMemberPrompt == 0 || _campMemberPromptTargetHandle != candidate.Handle ||
-                _campMemberPromptGroup != group || !PromptValid(_campMemberPrompt))
-            {
-                RemoveCampMemberPrompt();
-                if (!TryCreatePromptFor(group, "Hablar", out _campMemberPrompt))
-                {
-                    SetPromptVisible(_campMemberPrompt, false);
-                    _campMemberPromptArmed = true;
-                    if (contextPressed) OpenCampMemberMenu(candidate);
-                    return;
-                }
-                _campMemberPromptGroup = group;
-                _campMemberPromptTargetHandle = candidate.Handle;
-                _campMemberPromptArmed = false;
-                Log.Write("Camp-resident social prompt created for roster " + candidate.RosterId + ", handle=" + candidate.Handle + ", group=" + group + ".");
-            }
-
-            SetPromptVisible(_campMemberPrompt, true);
-            ActivateAmbientPromptGroup(candidate.Ped, _campMemberPrompt, _campMemberPromptGroup,
-                Convert.ToString(ReadRecordMember(_bridge.FindPlayerFactionRecord(candidate.RosterId), "Name")) ?? "Miembro de la banda",
-                "Camp resident");
-            bool completed = PromptHoldCompleted(_campMemberPrompt);
-            if (!completed && !contextPressed)
-            {
-                _campMemberPromptArmed = true;
-                return;
-            }
-            if (!_campMemberPromptArmed && !contextPressed) return;
-
-            _campMemberPromptArmed = false;
-            SetPromptVisible(_campMemberPrompt, false);
-            OpenCampMemberMenu(candidate);
-        }
-
-        private void OpenCampMemberMenu(CampboundRosterMember member)
-        {
-            if (member == null || member.Ped == null || !member.Ped.Exists() || string.IsNullOrWhiteSpace(member.RosterId)) return;
-            object record = _bridge.FindPlayerFactionRecord(member.RosterId);
-            if (record == null)
-            {
-                Notify("No se encontró la ficha de este miembro en player_faction.");
-                return;
-            }
-            _campMemberMenuOpen = true;
-            _campMemberMenuIndex = 0;
-            _campMemberMenuHandle = member.Handle;
-            _campMemberMenuRosterId = member.RosterId;
-            SetPromptVisible(_campManagerPrompt, false);
-            SetPromptVisible(_campMemberPrompt, false);
-            Log.Write("Camp resident social menu opened: roster=" + member.RosterId + ", handle=" + member.Handle + ".");
-        }
-
-        private void UpdateCampMemberMenu()
-        {
-            object record = _bridge.FindPlayerFactionRecord(_campMemberMenuRosterId);
-            Ped ped = null;
-            CampboundRosterMember state;
-            if (_campboundRosterMembers.TryGetValue(_campMemberMenuHandle, out state) && state != null && state.Ped != null && state.Ped.Exists())
-                ped = state.Ped;
-            if (record == null || ped == null || ped.IsDead)
-            {
-                CloseCampMemberMenu(false);
-                Notify("El miembro ya no está disponible en el campamento.");
-                return;
-            }
-
-            DrawCampMemberMenu(record);
-            if (JustPressed(ControlFrontendCancel))
-            {
-                CloseCampMemberMenu(true);
-                return;
-            }
-            if (JustPressed(ControlFrontendUp))
-            {
-                _campMemberMenuIndex = (_campMemberMenuIndex + 2) % 3;
-                return;
-            }
-            if (JustPressed(ControlFrontendDown))
-            {
-                _campMemberMenuIndex = (_campMemberMenuIndex + 1) % 3;
-                return;
-            }
-            if (!JustPressed(ControlFrontendAccept)) return;
-
-            if (_campMemberMenuIndex == 0)
-            {
-                ApplyCampMemberSocialAction(record, ped, true);
-                CloseCampMemberMenu(false);
-            }
-            else if (_campMemberMenuIndex == 1)
-            {
-                ApplyCampMemberSocialAction(record, ped, false);
-                CloseCampMemberMenu(false);
-            }
-            else CloseCampMemberMenu(true);
-        }
-
-        private void DrawCampMemberMenu(object record)
-        {
-            if (!ResolveUiDrawMethods()) return;
-            string name = Convert.ToString(ReadRecordMember(record, "Name")) ?? "Miembro de la banda";
-            int rank = 1;
-            try { rank = Convert.ToInt32(ReadRecordMember(record, "Rank") ?? 1); } catch { }
-            int regard = GetPlayerFactionRegard(_campMemberMenuRosterId, rank);
-            string[] options = { "Saludar", "Provocar (bajar Hacia ti)", "Cerrar" };
-            DrawMenuRect(0.285f, 0.275f, 0.43f, 0.40f, 14, 13, 12, 244);
-            DrawMenuRect(0.285f, 0.275f, 0.43f, 0.004f, 187, 145, 82, 255);
-            DrawMenuText("MIEMBRO DE LA BANDA", 0.315f, 0.305f, 0.27f, 245, 235, 214, 255);
-            DrawMenuText(name, 0.315f, 0.35f, 0.22f, 190, 174, 145, 255);
-            DrawMenuText("HACIA TI: " + regard, 0.315f, 0.388f, 0.20f,
-                regard < 0 ? 215 : 135, regard < 0 ? 100 : 190, regard < 0 ? 80 : 135, 255);
-            for (int i = 0; i < options.Length; i++)
-            {
-                float y = 0.435f + i * 0.055f;
-                bool active = i == _campMemberMenuIndex;
-                DrawMenuRect(0.315f, y, 0.37f, 0.044f, active ? 63 : 30, active ? 48 : 28, active ? 29 : 25, active ? 245 : 220);
-                if (active) DrawMenuRect(0.315f, y, 0.003f, 0.044f, 205, 166, 105, 255);
-                DrawMenuText((active ? "> " : "  ") + options[i], 0.33f, y + 0.009f, 0.205f,
-                    active ? 250 : 205, active ? 235 : 199, active ? 208 : 187, 255);
-            }
-            DrawMenuText("ARRIBA / ABAJO  ELEGIR     ACEPTAR  CONFIRMAR     ATRAS  CERRAR",
-                0.315f, 0.63f, 0.15f, 188, 179, 159, 255);
-        }
-
-        private void ApplyCampMemberSocialAction(object record, Ped ped, bool friendly)
-        {
-            string id = Convert.ToString(ReadRecordMember(record, "Id"));
-            string name = Convert.ToString(ReadRecordMember(record, "Name")) ?? "El miembro";
-            int rank = 1;
-            try { rank = Convert.ToInt32(ReadRecordMember(record, "Rank") ?? 1); } catch { }
-            if (string.IsNullOrWhiteSpace(id)) return;
-
-            if (_faction.RegardOffsets == null)
-                _faction.RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            int offset;
-            if (!_faction.RegardOffsets.TryGetValue(id, out offset)) offset = 0;
-            int oldRegard = GetPlayerFactionRegard(id, rank);
-            int newRegard = Math.Max(-100, Math.Min(100, oldRegard + (friendly ? 8 : -18)));
-            int baseRegard = oldRegard - offset;
-            _faction.RegardOffsets[id] = newRegard - baseRegard;
-            try { _faction.Save(); }
-            catch (Exception ex) { Log.Write("Camp member regard save warning: " + ex.Message); }
-
-            FounderPatches.CompanionRankFriendshipPostfix(new object[] { record });
-            _bridge.SaveRoster();
-            PlayCampSpeech(ped, friendly ? "GENERIC_HI" : "GENERIC_INSULT_HIGH");
-            Notify(friendly
-                ? name + " te saluda. Hacia ti: " + newRegard + "."
-                : name + " no pierde la calma, pero tu provocación reduce su Hacia ti a " + newRegard + ".");
-            Log.Write("Camp social action " + (friendly ? "greet" : "provoke") + " for " + id + ": regard " + oldRegard + " -> " + newRegard + "; member remains non-hostile.");
-        }
-
-        private void CloseCampMemberMenu(bool notify)
-        {
-            _campMemberMenuOpen = false;
-            _campMemberMenuIndex = 0;
-            _campMemberMenuHandle = 0;
-            _campMemberMenuRosterId = string.Empty;
-            _campMemberPromptArmed = true;
-            if (notify) Notify("Interacción cerrada.");
-        }
-
-        private void RemoveCampMemberPrompt()
-        {
-            if (_campMemberPrompt != 0)
-            {
-                try
-                {
-                    Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
-                    if (hud != null) InvokeHud(hud, "_UI_PROMPT_DELETE", _campMemberPrompt);
-                }
-                catch (Exception ex) { Log.Write("Camp resident prompt delete warning: " + ex.Message); }
-            }
-            _campMemberPrompt = 0;
-            _campMemberPromptGroup = 0;
-            _campMemberPromptTargetHandle = 0;
-            _campMemberPromptArmed = true;
-        }
-
         private bool PlayCampSpeech(Ped ped, string speechName)
         {
             if (ped == null || !ped.Exists() || ped.IsDead || string.IsNullOrWhiteSpace(speechName)) return false;
@@ -2891,7 +2648,7 @@ namespace EnRAGEPlayerFactionExtension
 
             float distance = player.Position.DistanceTo(_campManager.Position);
             if (distance <= _config.InteractionDistance + 1.5f) DisableHostileMeleeControls();
-            if (distance <= 2.8f && !player.IsOnMount && !player.IsInVehicle && !_factionMenuOpen && !_campMemberMenuOpen && !_keyboardOpen)
+            if (distance <= 2.8f && !player.IsOnMount && !player.IsInVehicle && !_factionMenuOpen && !_keyboardOpen)
                 UpdateCampManagerPrompt(player);
             else
             {
