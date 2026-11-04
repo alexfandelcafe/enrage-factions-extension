@@ -2372,6 +2372,85 @@ namespace EnRAGEPlayerFactionExtension
             return null;
         }
 
+        /// <summary>
+        /// Resolves the exact live ped for one stable player_faction roster ID. The Companion cache
+        /// is preferred because it associates the entity handle with the actual roster record; saved
+        /// handles are used only in the same process and only after model/alive validation.
+        /// </summary>
+        internal bool TryGetLivePlayerFactionPed(string rosterId, PlayerFactionData data, out Ped ped)
+        {
+            ped = null;
+            if (string.IsNullOrWhiteSpace(rosterId) || data == null) return false;
+
+            try
+            {
+                object record = FindPlayerFactionRecord(rosterId);
+                if (record == null) return false;
+                if (GetField(record, "IsAlive") is bool alive && !alive) return false;
+                if (GetField(record, "PresumedDead") is bool presumedDead && presumedDead) return false;
+                uint expectedModel = ToUInt32Safe(GetField(record, "ModelHash"));
+
+                Type hooks = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
+                    .FirstOrDefault(t => t != null);
+                FieldInfo cacheField = hooks != null ? hooks.GetField("RosterRecordsByPedHandle", StaticFlags) : null;
+                IDictionary cache = cacheField != null ? cacheField.GetValue(null) as IDictionary : null;
+                if (cache != null)
+                {
+                    foreach (DictionaryEntry entry in cache)
+                    {
+                        object cached = entry.Value;
+                        object cachedRecord = cached != null ? GetField(cached, "Record") : null;
+                        if (!string.Equals(GetField(cachedRecord, "Id") as string, rosterId, StringComparison.OrdinalIgnoreCase) ||
+                            !string.Equals(GetField(cachedRecord, "Gang") as string, "player_faction", StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        int handle;
+                        try { handle = Convert.ToInt32(entry.Key); } catch { continue; }
+                        if (handle == 0) continue;
+                        Ped candidate = GetField(cached, "Ped") as Ped;
+                        if (candidate == null || !candidate.Exists() || candidate.Handle != handle)
+                        {
+                            try { candidate = new Ped(handle); } catch { candidate = null; }
+                        }
+                        if (candidate == null || !candidate.Exists() || candidate.IsDead) continue;
+                        uint liveModel = ToUInt32Safe(candidate.Model.Hash);
+                        if (expectedModel != 0U && liveModel != expectedModel) continue;
+
+                        ped = candidate;
+                        if (data.CampRosterPedHandles == null)
+                            data.CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                        data.CampRosterPedHandles[rosterId] = handle;
+                        data.CampRosterPedProcessId = Process.GetCurrentProcess().Id;
+                        return true;
+                    }
+                }
+
+                // Fallback is intentionally process-scoped. Numeric handles must never be carried
+                // across a full game restart because RDR2 may reuse them for an unrelated NPC.
+                if (data.CampRosterPedProcessId != Process.GetCurrentProcess().Id ||
+                    data.CampRosterPedHandles == null)
+                    return false;
+
+                int savedHandle;
+                if (!data.CampRosterPedHandles.TryGetValue(rosterId, out savedHandle) || savedHandle == 0)
+                    return false;
+                Ped savedPed;
+                try { savedPed = new Ped(savedHandle); }
+                catch { return false; }
+                if (savedPed == null || !savedPed.Exists() || savedPed.IsDead) return false;
+                uint savedModel = ToUInt32Safe(savedPed.Model.Hash);
+                if (expectedModel != 0U && savedModel != expectedModel) return false;
+                ped = savedPed;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Exact appearance ped lookup failed for " + rosterId + ": " + Unwrap(ex));
+                return false;
+            }
+        }
+
         internal bool SaveRoster()
         {
             object main = MainInstance;
@@ -2589,6 +2668,7 @@ namespace EnRAGEPlayerFactionExtension
                 PatchIfFound(FindMethod(_rosterMenuType, "ActivateDetail", 0), nameof(FounderPatches.PlayerLeaderActivateDetailPrefix), true);
                 PatchIfFound(FindMethod(_rosterMenuType, "DetailActions", 0), nameof(FounderPatches.PlayerFactionMemberDetailActionsPostfix), false);
                 PatchIfFound(FindMethod(_rosterMenuType, "ActivateDetail", 0), nameof(FounderPatches.PlayerFactionMemberActivateDetailPrefix), true);
+                PatchIfFound(FindMethod(_rosterMenuType, "Draw", 0), nameof(FounderPatches.PlayerFactionRosterMenuDrawPrefix), true);
                 MethodInfo drawDetail = FindMethod(_rosterMenuType, "DrawDetail", 0);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPrefix), true);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPostfix), false);
@@ -2903,8 +2983,14 @@ namespace EnRAGEPlayerFactionExtension
                     if (back >= 0) __result.Insert(back, "Degradar rango");
                     else __result.Add("Degradar rango");
                 }
+                back = __result.IndexOf("Atrás");
+                if (!__result.Contains("Modificar apariencia"))
+                {
+                    if (back >= 0) __result.Insert(back, "Modificar apariencia");
+                    else __result.Add("Modificar apariencia");
+                }
             }
-            catch (Exception ex) { Log.Write("Player faction member rank actions warning: " + ex.Message); }
+            catch (Exception ex) { Log.Write("Player faction member rank/appearance actions warning: " + ex.Message); }
         }
 
         internal static bool PlayerFactionMemberActivateDetailPrefix(object __instance)
@@ -2920,6 +3006,15 @@ namespace EnRAGEPlayerFactionExtension
                 int index = selected == null ? -1 : Convert.ToInt32(selected);
                 if (index < 0 || index >= actions.Count) return true;
                 string action = actions[index];
+                if (action == "Modificar apariencia")
+                {
+                    object appearanceRecord = ReadMember(__instance, "_detail");
+                    if (IsPlayerFactionRecord(appearanceRecord))
+                        Runtime.OpenAppearanceEditor(appearanceRecord);
+                    // Keep the character dossier open even when the editor cannot be opened
+                    // (for example, the member has no live ped or is too far away).
+                    return false;
+                }
                 if (action != "Ascender rango" && action != "Degradar rango") return true;
                 object record = ReadMember(__instance, "_detail");
                 if (!IsPlayerFactionRecord(record)) return true;
@@ -2929,6 +3024,22 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex)
             {
                 Log.Write("Player faction member rank action failed: " + ex.Message);
+                return true;
+            }
+        }
+
+        internal static bool PlayerFactionRosterMenuDrawPrefix(object __instance)
+        {
+            try
+            {
+                if (Runtime == null || !Runtime.IsAppearanceEditorOpen)
+                    return true;
+                Runtime.DrawAppearanceEditor();
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Appearance editor draw prefix warning: " + Unwrap(ex));
                 return true;
             }
         }
