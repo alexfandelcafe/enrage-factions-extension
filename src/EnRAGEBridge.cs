@@ -52,7 +52,6 @@ namespace EnRAGEPlayerFactionExtension
         private bool _patched;
         private bool _companionFriendshipPatched;
         private bool _companionRosterCommitPatched;
-        private bool _companionGenericPromptPatched;
         private int _nextCompanionRosterNormalizeAt;
         private int _nextPlayerFactionNeutralityAt;
         private int _nextPlayerFactionCampDiscoveryPrepAt;
@@ -1762,7 +1761,7 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void TryInstallCompanionIntegrationPatches()
         {
-            if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched && _companionGenericPromptPatched)) return;
+            if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched)) return;
             try
             {
                 Type hooks = AppDomain.CurrentDomain.GetAssemblies()
@@ -1796,20 +1795,6 @@ namespace EnRAGEPlayerFactionExtension
                     }
                 }
 
-                if (!_companionGenericPromptPatched)
-                {
-                    MethodInfo genericPrompt = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
-                        m.Name == "UpdateGenericRecruitPrompt" && m.IsStatic &&
-                        m.GetParameters().Length == 2 &&
-                        m.GetParameters()[0].ParameterType == typeof(object) &&
-                        m.GetParameters()[1].ParameterType == typeof(Ped));
-                    if (genericPrompt != null)
-                    {
-                        PatchFirstIfFound(genericPrompt, nameof(FounderPatches.SuppressCompanionPromptForPlayerFactionMemberPrefix));
-                        _companionGenericPromptPatched = true;
-                        Log.Write("High-priority Companion generic-prompt guard installed for player-faction camp members.");
-                    }
-                }
             }
             catch (Exception ex) { Log.Write("Companion integration patch retry warning: " + Unwrap(ex)); }
         }
@@ -1995,7 +1980,6 @@ namespace EnRAGEPlayerFactionExtension
             _patched = false;
             _companionFriendshipPatched = false;
             _companionRosterCommitPatched = false;
-            _companionGenericPromptPatched = false;
             _nextCompanionRosterNormalizeAt = 0;
         }
 
@@ -3170,8 +3154,8 @@ namespace EnRAGEPlayerFactionExtension
                 }
 
                 // Player-camp residents should use RDR2's native greet/antagonize interaction.
-                // Suppress enRAGE's additional social prompt and intercept this before Companion's
-                // generic-recruit prefix can replace the native interaction.
+                // Suppress only enRAGE's built-in social prompt; leave Companion's separate
+                // call/follow prompt untouched.
                 if (Runtime != null && Runtime.IsCampManagerSocialTarget(target.Handle, player))
                 {
                     MethodInfo hideManager = __instance.GetType().GetMethods(Flags)
@@ -3196,59 +3180,6 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex)
             {
                 Log.Write("UpdateSocial target guard warning: " + ex.Message);
-                return true;
-            }
-        }
-
-        internal static bool SuppressCompanionPromptForPlayerFactionMemberPrefix(object[] __args)
-        {
-            try
-            {
-                if (Runtime == null || __args == null || __args.Length < 2)
-                    return true;
-
-                object main = __args[0];
-                Ped player = __args[1] as Ped;
-                if (main == null || player == null || !player.Exists())
-                    return true;
-
-                Type hooks = AppDomain.CurrentDomain.GetAssemblies()
-                    .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
-                    .FirstOrDefault(t => t != null);
-                if (hooks == null) return true;
-
-                // Mirror Companion's target selection exactly: it prioritizes its preferred
-                // social target, otherwise it runs FindCandidate before creating the G prompt.
-                FieldInfo preferredField = hooks.GetField("_preferredGenericPed", Flags);
-                Ped preferred = preferredField != null ? preferredField.GetValue(null) as Ped : null;
-                bool hasPreferredTarget = preferred != null && preferred.Exists();
-                Ped target = hasPreferredTarget ? preferred : null;
-
-                if (!hasPreferredTarget)
-                {
-                    MethodInfo findCandidate = hooks.GetMethods(Flags).FirstOrDefault(m =>
-                        m.Name == "FindCandidate" && m.IsStatic && m.GetParameters().Length == 2 &&
-                        m.GetParameters()[0].ParameterType == typeof(object) &&
-                        m.GetParameters()[1].ParameterType == typeof(Ped));
-                    if (findCandidate != null)
-                        target = findCandidate.Invoke(null, new object[] { main, player }) as Ped;
-                }
-
-                // Returning false here suppresses the extra G/hold prompt created by Companion;
-                // the game's regular R/F greet/antagonize controls remain in charge for this ped.
-                if (target == null || !target.Exists() ||
-                    !Runtime.IsCampMemberSocialTarget(target.Handle, player))
-                    return true;
-
-                MethodInfo hide = hooks.GetMethods(Flags).FirstOrDefault(m =>
-                    m.Name == "HideGenericRecruitPrompt" && m.IsStatic && m.GetParameters().Length == 0);
-                if (hide != null) hide.Invoke(null, null);
-                if (preferredField != null) preferredField.SetValue(null, null);
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Log.Write("Companion player-faction native-interaction guard warning: " + Unwrap(ex));
                 return true;
             }
         }
