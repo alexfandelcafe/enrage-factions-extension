@@ -1820,10 +1820,10 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     DrawMenuRect(0.57f, 0.245f, 0.38f, 0.205f, 25, 23, 21, 230);
                     DrawMenuText("NO HAY PIEZAS CATALOGADAS", 0.59f, 0.27f, 0.165f, 245, 235, 214, 255);
-                    DrawMenuText("Exporta un conjunto XML con", 0.59f, 0.31f, 0.155f, 210, 205, 192, 255);
-                    DrawMenuText("YMT-Trainer y guardalo en", 0.59f, 0.337f, 0.155f, 210, 205, 192, 255);
-                    DrawMenuText("YMTTFiles/SavedYMTs.", 0.59f, 0.364f, 0.155f, 210, 205, 192, 255);
-                    DrawMenuText("Luego vuelve y recarga el catalogo.", 0.59f, 0.404f, 0.145f, 190, 174, 145, 255);
+                    DrawMenuText("YMT-Trainer: SavedYMTs", 0.59f, 0.31f, 0.155f, 210, 205, 192, 255);
+                    DrawMenuText("YMT Helper: part_library.xml", 0.59f, 0.337f, 0.155f, 210, 205, 192, 255);
+                    DrawMenuText("Fuentes en la carpeta del juego.", 0.59f, 0.364f, 0.155f, 210, 205, 192, 255);
+                    DrawMenuText("Vuelve y recarga el catalogo.", 0.59f, 0.404f, 0.145f, 190, 174, 145, 255);
                 }
                 else
                 {
