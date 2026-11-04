@@ -347,7 +347,7 @@ Al iniciar, la extensión crea `scripts/EnRAGEPlayerFactionExtension.ini` si tod
 | `FounderHeading` | `90.0` | Orientación inicial del fundador. |
 | `FounderModel` | `U_M_M_Rwfrancher_01` | Modelo del fundador y del administrador del campamento. |
 | `SpawnDistance` | `300.0` | Distancia máxima a la que se crea el fundador; se limita al intervalo 300–600. |
-| `InteractionDistance` | `3.0` | Distancia configurable para la interacción del fundador; se limita al intervalo 1,5–5. |
+| `InteractionDistance` | `3.0` | Radio base del grupo contextual y de la protección que desactiva ataques cuerpo a cuerpo cerca del fundador/administrador; se limita al intervalo 1,5–5. |
 | `FounderPrompt` | `Fundar una banda` | Texto del prompt del fundador. |
 
 Los IDs `RecruitGangId` y `RecruitRosterId` no pertenecen a este INI. Se configuran en `EnRAGECompanionsExtension.ini` y deben mantenerse como `player_faction`.
