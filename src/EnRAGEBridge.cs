@@ -3076,7 +3076,7 @@ namespace EnRAGEPlayerFactionExtension
                         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     object keyCode = keyCodeProperty != null ? keyCodeProperty.GetValue(keyEventArgs, null) : null;
                     if (keyCode != null)
-                        Runtime.HandleAppearanceEditorKey(Convert.ToInt32(keyCode));
+                        Runtime.QueueAppearanceEditorKey(Convert.ToInt32(keyCode));
                     else
                         Log.Write("Appearance editor keyboard event did not expose KeyCode.");
                 }
