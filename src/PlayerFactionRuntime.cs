@@ -1599,7 +1599,7 @@ namespace EnRAGEPlayerFactionExtension
                 MetaPedCategory selected = YmtAppearanceCatalog.Categories[_appearanceCategoryIndex];
                 _appearanceFilteredAssets = _appearanceAssets
                     .Where(x => string.Equals(x.CategoryKey, selected.Key, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
                     .ToList();
                 _appearanceAssetIndex = 0;
                 _appearanceAssetListOpen = true;
