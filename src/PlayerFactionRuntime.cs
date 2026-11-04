@@ -21,6 +21,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong SetPedCanBeTargettedHash = 0x63F58F7C80513AADUL;
         private const ulong SetPedCanBeTargettedByPlayerHash = 0x66B57B72E0836A76UL;
         private const ulong SetEntityCanBeDamagedHash = 0x0D06D522B90E861FUL;
+        private const ulong SetEntityCanBeDamagedByRelationshipGroupHash = 0x0EF1AFB18649E015UL;
         private const ulong SetBlipNameHash = 11290983183885202434UL;
         // Generic POI is retained for the founder marker. Player camps use RDR2's native
         // BLIP_STYLE_MP_CAMP style, which is classified as PROPERTY and uses the camp icon.
@@ -2037,13 +2038,23 @@ namespace EnRAGEPlayerFactionExtension
             if (ped == null || !ped.Exists() || ped.IsDead || player == null || !player.Exists()) return;
             try
             {
-                // Player-faction members stay selectable for native RDR2 social controls, but cannot
-                // take damage from the player or anyone else. Friendly relationship 0 gives the grey
-                // ally reticle instead of treating the recruit like a hostile target.
-                ENTITY.SET_ENTITY_INVINCIBLE(ped.Handle, true);
-                Function.Call(SetEntityCanBeDamagedHash, new InputArgument[] { ped.Handle, false });
+                // Keep members targetable for RDR2's native greet/antagonize controls, but reject
+                // damage originating from the player's relationship group only. Enemy gangs can
+                // still hurt them. Friendly relationship 0 gives the grey ally reticle.
                 uint memberGroup = ped.RelationshipGroup;
                 uint playerGroup = player.RelationshipGroup;
+                Function.Call(SetEntityCanBeDamagedByRelationshipGroupHash, new InputArgument[]
+                {
+                    ped.Handle, false, unchecked((int)playerGroup)
+                });
+                uint canonicalPlayerGroup = MISC.GET_HASH_KEY("PLAYER");
+                if (canonicalPlayerGroup != playerGroup)
+                {
+                    Function.Call(SetEntityCanBeDamagedByRelationshipGroupHash, new InputArgument[]
+                    {
+                        ped.Handle, false, unchecked((int)canonicalPlayerGroup)
+                    });
+                }
                 World.SetRelationshipBetweenGroups(0, memberGroup, playerGroup);
                 World.SetRelationshipBetweenGroups(0, playerGroup, memberGroup);
             }
