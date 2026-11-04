@@ -3212,26 +3212,27 @@ namespace EnRAGEPlayerFactionExtension
                 if (main == null || player == null || !player.Exists())
                     return true;
 
-                // Resolve the current interaction target from enRAGE. Companion also sets
-                // _preferredGenericPed in its own UpdateSocial prefix, so use that as a
-                // fallback in case SocialTarget temporarily returns no target this frame.
-                Ped target = null;
-                MethodInfo socialTarget = main.GetType().GetMethods(Flags).FirstOrDefault(m =>
-                    m.Name == "SocialTarget" && m.GetParameters().Length == 1 &&
-                    m.GetParameters()[0].ParameterType == typeof(Ped));
-                if (socialTarget != null)
-                {
-                    object tuple = socialTarget.Invoke(main, new object[] { player });
-                    FieldInfo item1 = tuple != null ? tuple.GetType().GetField("Item1") : null;
-                    if (item1 != null) target = item1.GetValue(tuple) as Ped;
-                }
-
                 Type hooks = AppDomain.CurrentDomain.GetAssemblies()
                     .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
                     .FirstOrDefault(t => t != null);
-                FieldInfo preferredField = hooks != null ? hooks.GetField("_preferredGenericPed", Flags) : null;
-                if (target == null && preferredField != null)
-                    target = preferredField.GetValue(null) as Ped;
+                if (hooks == null) return true;
+
+                // Mirror Companion's target selection exactly: it prioritizes its preferred
+                // social target, otherwise it runs FindCandidate before creating the G prompt.
+                FieldInfo preferredField = hooks.GetField("_preferredGenericPed", Flags);
+                Ped preferred = preferredField != null ? preferredField.GetValue(null) as Ped : null;
+                bool hasPreferredTarget = preferred != null && preferred.Exists();
+                Ped target = hasPreferredTarget ? preferred : null;
+
+                if (!hasPreferredTarget)
+                {
+                    MethodInfo findCandidate = hooks.GetMethods(Flags).FirstOrDefault(m =>
+                        m.Name == "FindCandidate" && m.IsStatic && m.GetParameters().Length == 2 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(Ped));
+                    if (findCandidate != null)
+                        target = findCandidate.Invoke(null, new object[] { main, player }) as Ped;
+                }
 
                 // Returning false here suppresses the extra G/hold prompt created by Companion;
                 // the game's regular R/F greet/antagonize controls remain in charge for this ped.
@@ -3239,12 +3240,9 @@ namespace EnRAGEPlayerFactionExtension
                     !Runtime.IsCampMemberSocialTarget(target.Handle, player))
                     return true;
 
-                if (hooks != null)
-                {
-                    MethodInfo hide = hooks.GetMethods(Flags).FirstOrDefault(m =>
-                        m.Name == "HideGenericRecruitPrompt" && m.IsStatic && m.GetParameters().Length == 0);
-                    if (hide != null) hide.Invoke(null, null);
-                }
+                MethodInfo hide = hooks.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "HideGenericRecruitPrompt" && m.IsStatic && m.GetParameters().Length == 0);
+                if (hide != null) hide.Invoke(null, null);
                 if (preferredField != null) preferredField.SetValue(null, null);
                 return false;
             }
