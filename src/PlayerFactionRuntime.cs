@@ -138,6 +138,8 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextAppearanceRestoreAt;
         private bool _appearanceEditorOpen;
         private bool _appearanceAssetListOpen;
+        private object _appearanceRosterMenu;
+        private bool _appearanceRosterWasOpen;
         private int _appearanceCategoryIndex;
         private int _appearanceAssetIndex;
         private int _appearanceCameraHandle;
@@ -1173,7 +1175,7 @@ namespace EnRAGEPlayerFactionExtension
             get { return _appearanceEditorOpen; }
         }
 
-        internal bool OpenAppearanceEditor(object record)
+        internal bool OpenAppearanceEditor(object record, object rosterMenu)
         {
             if (record == null || !_bridge.IsAvailable)
             {
@@ -1279,11 +1281,111 @@ namespace EnRAGEPlayerFactionExtension
                 return false;
             }
 
+            if (!SuspendAppearanceRosterMenu(rosterMenu))
+            {
+                CloseAppearanceEditor(false);
+                Notify("No se pudo liberar el menú de enRAGE para abrir el editor. El NPC quedó restaurado.");
+                Log.Write("Appearance editor open cancelled because the enRAGE roster could not be suspended.");
+                return false;
+            }
+
             _appearanceEditorOpen = true;
             Notify("EDITOR DE APARIENCIA: elegir una pieza la aplica al NPC y la guarda al instante.");
             Log.Write("Appearance editor opened for " + _appearanceTargetName + " (" + _appearanceTargetId +
                 "), model=0x" + _appearanceTargetModelHash.ToString("X8") + ", catalog assets=" + _appearanceAssets.Count + ".");
             return true;
+        }
+
+        private bool SuspendAppearanceRosterMenu(object rosterMenu)
+        {
+            if (rosterMenu == null)
+            {
+                Log.Write("Appearance editor cannot suspend the enRAGE roster: menu instance is null.");
+                return false;
+            }
+
+            try
+            {
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                PropertyInfo isOpenProperty = rosterMenu.GetType().GetProperty("IsOpen", flags);
+                if (isOpenProperty == null || isOpenProperty.PropertyType != typeof(bool))
+                    throw new MissingMemberException(rosterMenu.GetType().FullName, "IsOpen");
+
+                object currentValue = isOpenProperty.GetValue(rosterMenu, null);
+                if (!(currentValue is bool) || !(bool)currentValue)
+                    throw new InvalidOperationException("RosterMenu.IsOpen was not true when the appearance action was activated.");
+
+                // Suspend only the open flag. Do not call Close()/Toggle(): those clear _detail,
+                // selection and scroll state. Keeping the original menu instance and state intact
+                // lets us restore the exact dossier when the editor exits.
+                _appearanceRosterMenu = rosterMenu;
+                _appearanceRosterWasOpen = true;
+                MethodInfo setter = isOpenProperty.GetSetMethod(true);
+                if (setter != null)
+                {
+                    setter.Invoke(rosterMenu, new object[] { false });
+                }
+                else
+                {
+                    FieldInfo backingField = rosterMenu.GetType().GetField("<IsOpen>k__BackingField", flags);
+                    if (backingField == null)
+                        throw new MissingMethodException(rosterMenu.GetType().FullName, "set_IsOpen");
+                    backingField.SetValue(rosterMenu, false);
+                }
+
+                object suspendedValue = isOpenProperty.GetValue(rosterMenu, null);
+                if (!(suspendedValue is bool) || (bool)suspendedValue)
+                    throw new InvalidOperationException("RosterMenu.IsOpen remained true after suspension.");
+
+                Log.Write("Appearance editor suspended the enRAGE RosterMenu.IsOpen flag without resetting its dossier state.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Could not suspend enRAGE roster for appearance editor: " + ex);
+                RestoreAppearanceRosterMenu();
+                return false;
+            }
+        }
+
+        private void RestoreAppearanceRosterMenu()
+        {
+            object rosterMenu = _appearanceRosterMenu;
+            bool restoreOpen = _appearanceRosterWasOpen;
+            _appearanceRosterMenu = null;
+            _appearanceRosterWasOpen = false;
+            if (rosterMenu == null || !restoreOpen) return;
+
+            try
+            {
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                PropertyInfo isOpenProperty = rosterMenu.GetType().GetProperty("IsOpen", flags);
+                if (isOpenProperty == null || isOpenProperty.PropertyType != typeof(bool))
+                    throw new MissingMemberException(rosterMenu.GetType().FullName, "IsOpen");
+
+                MethodInfo setter = isOpenProperty.GetSetMethod(true);
+                if (setter != null)
+                {
+                    setter.Invoke(rosterMenu, new object[] { true });
+                }
+                else
+                {
+                    FieldInfo backingField = rosterMenu.GetType().GetField("<IsOpen>k__BackingField", flags);
+                    if (backingField == null)
+                        throw new MissingMethodException(rosterMenu.GetType().FullName, "set_IsOpen");
+                    backingField.SetValue(rosterMenu, true);
+                }
+
+                object restoredValue = isOpenProperty.GetValue(rosterMenu, null);
+                if (!(restoredValue is bool) || !(bool)restoredValue)
+                    throw new InvalidOperationException("RosterMenu.IsOpen could not be restored.");
+
+                Log.Write("Appearance editor restored the enRAGE roster to its previous open state and dossier.");
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Could not restore enRAGE roster after appearance editor: " + ex);
+            }
         }
 
         private void RefreshAppearanceCatalog()
@@ -1673,6 +1775,7 @@ namespace EnRAGEPlayerFactionExtension
             _appearanceCategoryIndex = 0;
             _appearanceAssetIndex = 0;
             _appearanceViewAngle = 0f;
+            RestoreAppearanceRosterMenu();
 
             if (wasOpen)
                 Log.Write("Appearance editor closed.");
