@@ -461,17 +461,60 @@ namespace EnRAGEPlayerFactionExtension
         private static string DescribeLibraryStructure(XmlDocument document)
         {
             if (document.DocumentElement == null) return "(XML vacío)";
-            var names = new List<string>();
-            foreach (XmlNode child in document.DocumentElement.ChildNodes)
+
+            var samples = new List<string>();
+            XmlNodeList nodes = document.SelectNodes("//*");
+            if (nodes != null)
             {
-                if (child.NodeType == XmlNodeType.Element)
+                foreach (XmlNode node in nodes)
                 {
-                    names.Add(child.LocalName);
-                    if (names.Count >= 12) break;
+                    if (node.NodeType != XmlNodeType.Element) continue;
+
+                    var path = new List<string>();
+                    XmlNode current = node;
+                    int depth = 0;
+                    while (current != null && current.NodeType != XmlNodeType.Document && depth < 5)
+                    {
+                        path.Insert(0, current.LocalName);
+                        current = current.ParentNode;
+                        depth++;
+                    }
+
+                    string sample = string.Join("/", path.ToArray());
+                    if (node.Attributes != null && node.Attributes.Count > 0)
+                    {
+                        var attributes = new List<string>();
+                        foreach (XmlAttribute attribute in node.Attributes)
+                        {
+                            attributes.Add(attribute.LocalName + "=" + TrimSample(attribute.Value, 36));
+                            if (attributes.Count >= 4) break;
+                        }
+                        sample += " [" + string.Join(", ", attributes.ToArray()) + "]";
+                    }
+
+                    if (node.ChildNodes.Count == 1 &&
+                        (node.FirstChild.NodeType == XmlNodeType.Text ||
+                         node.FirstChild.NodeType == XmlNodeType.CDATA))
+                    {
+                        sample += " {" + TrimSample(node.InnerText, 48) + "}";
+                    }
+
+                    samples.Add(sample);
+                    if (samples.Count >= 18) break;
                 }
             }
+
             return "root=" + document.DocumentElement.LocalName +
-                "; children=" + string.Join(",", names.ToArray());
+                "; samples=" + string.Join(" || ", samples.ToArray());
+        }
+
+        private static string TrimSample(string value, int maximumLength)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            string result = value.Trim().Replace("\r", " ").Replace("\n", " ");
+            return result.Length <= maximumLength
+                ? result
+                : result.Substring(0, maximumLength - 3) + "...";
         }
 
         internal static uint ParseHash(string value)
