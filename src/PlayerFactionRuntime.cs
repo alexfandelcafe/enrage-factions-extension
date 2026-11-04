@@ -2020,7 +2020,7 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        private void EnsureNativeCampMemberSocialInteraction(Ped ped)
+        internal void EnsureNativeCampMemberSocialInteraction(Ped ped)
         {
             if (ped == null || !ped.Exists() || ped.IsDead) return;
 
