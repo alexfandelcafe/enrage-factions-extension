@@ -51,7 +51,6 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong CreateScriptCameraHash = 0xE72CDBA7F0A02DD6UL;
         private const ulong SetCameraActiveHash = 0x87295BCA613800C8UL;
         private const ulong SetCameraCoordinateHash = 0xF9EE7D419EE49DE6UL;
-        private const ulong PointCameraAtEntityHash = 0xFC2867E6074D3A61UL;
         private const ulong PointCameraAtCoordHash = 0xF75497BB865F0803UL;
         private const ulong SetCameraFovHash = 0x27666E5988D9D429UL;
         private const ulong RenderScriptCamerasHash = 0x33281167E4942E4FUL;
@@ -150,9 +149,7 @@ namespace EnRAGEPlayerFactionExtension
         private Ped _appearanceTargetPed;
         private List<YmtAppearanceAsset> _appearanceAssets = new List<YmtAppearanceAsset>();
         private List<YmtAppearanceAsset> _appearanceFilteredAssets = new List<YmtAppearanceAsset>();
-        private string _appearanceCatalogDirectory = string.Empty;
         private int _appearanceCatalogFilesScanned;
-        private bool _appearanceCatalogLoaded;
 
         private sealed class CampboundRosterMember
         {
@@ -1267,6 +1264,14 @@ namespace EnRAGEPlayerFactionExtension
                 }
             }
 
+            if (_appearanceCameraHandle == 0)
+            {
+                CloseAppearanceEditor(false);
+                Notify("No se pudo crear la cámara de vista previa. El NPC no fue dejado congelado.");
+                Log.Write("Appearance editor open cancelled because the scripted preview camera could not be created.");
+                return false;
+            }
+
             _appearanceEditorOpen = true;
             Notify("EDITOR DE APARIENCIA: elegir una pieza la aplica al NPC y la guarda al instante.");
             Log.Write("Appearance editor opened for " + _appearanceTargetName + " (" + _appearanceTargetId +
@@ -1276,9 +1281,9 @@ namespace EnRAGEPlayerFactionExtension
 
         private void RefreshAppearanceCatalog()
         {
+            string catalogDirectory;
             _appearanceAssets = YmtAppearanceCatalog.LoadSavedAssets(
-                out _appearanceCatalogDirectory, out _appearanceCatalogFilesScanned);
-            _appearanceCatalogLoaded = true;
+                out catalogDirectory, out _appearanceCatalogFilesScanned);
             _appearanceFilteredAssets = new List<YmtAppearanceAsset>();
         }
 
