@@ -1285,6 +1285,8 @@ namespace EnRAGEPlayerFactionExtension
             _appearanceAssets = YmtAppearanceCatalog.LoadSavedAssets(
                 out catalogDirectory, out _appearanceCatalogFilesScanned);
             _appearanceFilteredAssets = new List<YmtAppearanceAsset>();
+            Log.Write("Appearance catalog refreshed: " + _appearanceAssets.Count + " component(s), " +
+                _appearanceCatalogFilesScanned + " XML file(s), path=" + catalogDirectory + ".");
         }
 
         private void UpdateAppearanceEditor()
