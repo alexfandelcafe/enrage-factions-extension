@@ -55,6 +55,7 @@ namespace EnRAGEPlayerFactionExtension
         private bool _companionNativeSocialPrefixPatched;
         private bool _companionDismissedProfilePatched;
         private bool _companionReleasedProfilePatched;
+        private bool _companionCampManagerRecruitmentGuardPatched;
         private int _nextCompanionRosterNormalizeAt;
         private int _nextPlayerFactionNeutralityAt;
 
@@ -1765,7 +1766,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched &&
                 _companionNativeSocialPrefixPatched && _companionDismissedProfilePatched &&
-                _companionReleasedProfilePatched)) return;
+                _companionReleasedProfilePatched && _companionCampManagerRecruitmentGuardPatched)) return;
             try
             {
                 Type hooks = AppDomain.CurrentDomain.GetAssemblies()
@@ -1811,6 +1812,23 @@ namespace EnRAGEPlayerFactionExtension
                         PatchFirstIfFound(socialPrefix, nameof(FounderPatches.AllowNativeSocialForPlayerFactionPrefix));
                         _companionNativeSocialPrefixPatched = true;
                         Log.Write("Companion social-prefix bypass installed for player-faction roster members.");
+                    }
+                }
+
+                if (!_companionCampManagerRecruitmentGuardPatched)
+                {
+                    MethodInfo genericEligibility = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "IsEligibleGenericCandidate" && m.IsStatic &&
+                        m.GetParameters().Length == 4 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(Ped) &&
+                        m.GetParameters()[2].ParameterType == typeof(Ped) &&
+                        m.GetParameters()[3].ParameterType == typeof(bool));
+                    if (genericEligibility != null)
+                    {
+                        PatchFirstIfFound(genericEligibility, nameof(FounderPatches.BlockCampManagerGenericRecruitmentPrefix));
+                        _companionCampManagerRecruitmentGuardPatched = true;
+                        Log.Write("Companion generic recruitment guard installed for the camp administrator.");
                     }
                 }
 
@@ -3322,6 +3340,25 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex)
             {
                 Log.Write("Companion native-social bypass warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
+        internal static bool BlockCampManagerGenericRecruitmentPrefix(object[] __args, ref bool __result)
+        {
+            try
+            {
+                Ped candidate = __args != null && __args.Length > 2 ? __args[2] as Ped : null;
+                if (Runtime == null || candidate == null || !candidate.Exists() || !Runtime.IsCampManagerPed(candidate))
+                    return true;
+
+                // The administrator is a permanent camp service NPC, never a Companion recruit.
+                __result = false;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Camp administrator recruitment guard warning: " + Unwrap(ex));
                 return true;
             }
         }
