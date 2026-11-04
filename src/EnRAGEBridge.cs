@@ -2669,6 +2669,25 @@ namespace EnRAGEPlayerFactionExtension
                 PatchIfFound(FindMethod(_rosterMenuType, "DetailActions", 0), nameof(FounderPatches.PlayerFactionMemberDetailActionsPostfix), false);
                 PatchIfFound(FindMethod(_rosterMenuType, "ActivateDetail", 0), nameof(FounderPatches.PlayerFactionMemberActivateDetailPrefix), true);
                 PatchIfFound(FindMethod(_rosterMenuType, "Draw", 0), nameof(FounderPatches.PlayerFactionRosterMenuDrawPrefix), true);
+
+                // While the custom appearance editor is open, the native enRAGE roster must not
+                // keep processing navigation/accept input behind it. Discover the input/update
+                // entry points by name because enRAGE builds can rename these private methods.
+                MethodInfo[] rosterModalMethods = _rosterMenuType.GetMethods(InstanceFlags)
+                    .Where(m => m.GetParameters().Length == 0 && m.ReturnType == typeof(void) &&
+                        m.Name != "Draw" && m.Name != "DrawDetail" && m.Name != "DetailActions" &&
+                        (m.Name.IndexOf("Input", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         m.Name.IndexOf("Navigate", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         m.Name.IndexOf("Process", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         m.Name.IndexOf("Handle", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         m.Name == "Activate" || m.Name == "Tick"))
+                    .ToArray();
+                foreach (MethodInfo modalMethod in rosterModalMethods)
+                    PatchIfFound(modalMethod, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
+                Log.Write("Appearance editor modal suppression targets: " +
+                    (rosterModalMethods.Length == 0 ? "none discovered" : string.Join(", ", rosterModalMethods.Select(m => m.Name).Distinct())) + ".");
+
                 MethodInfo drawDetail = FindMethod(_rosterMenuType, "DrawDetail", 0);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPrefix), true);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPostfix), false);
@@ -3034,12 +3053,28 @@ namespace EnRAGEPlayerFactionExtension
             {
                 if (Runtime == null || !Runtime.IsAppearanceEditorOpen)
                     return true;
-                Runtime.DrawAppearanceEditor();
+                // Draw is also called from Runtime.Tick while the modal is active. Suppress
+                // enRAGE's original roster rendering so it cannot remain visible behind the editor.
                 return false;
             }
             catch (Exception ex)
             {
                 Log.Write("Appearance editor draw prefix warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
+        internal static bool PlayerFactionRosterModalInputPrefix(object __instance)
+        {
+            try
+            {
+                // This patch is installed only on zero-argument roster update/input methods.
+                // Returning false makes the appearance editor the sole owner of navigation.
+                return Runtime == null || !Runtime.IsAppearanceEditorOpen;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Appearance modal input suppression warning: " + Unwrap(ex));
                 return true;
             }
         }
