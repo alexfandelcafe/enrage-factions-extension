@@ -276,6 +276,13 @@ namespace EnRAGEPlayerFactionExtension
             if (_appearanceEditorOpen)
             {
                 UpdateAppearanceEditor();
+                if (_appearanceEditorOpen)
+                {
+                    // Render independently of enRAGE's roster Draw call. The roster is now
+                    // input-suppressed, so the editor must own both its frame and its controls.
+                    DrawAppearanceEditor();
+                    SuppressAppearanceEditorControls();
+                }
                 return;
             }
 
@@ -1471,6 +1478,32 @@ namespace EnRAGEPlayerFactionExtension
                 else
                 {
                     Log.Write("Saved appearance pending for roster ID " + profile.MemberId + ": " + error);
+                }
+            }
+        }
+
+        private void SuppressAppearanceEditorControls()
+        {
+            // Called once per game frame after this editor has sampled its own controls.
+            // This prevents the underlying enRAGE menu/gameplay from receiving the same inputs.
+            int[] controls =
+            {
+                ControlFrontendUp, ControlFrontendDown, ControlFrontendLeft, ControlFrontendRight,
+                ControlFrontendAccept, ControlFrontendCancel
+            };
+            foreach (int group in new[] { 0, 2 })
+            {
+                foreach (int control in controls)
+                {
+                    try
+                    {
+                        Function.Call(DisableControlActionHash, new InputArgument[] { group, control, true });
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Write("Appearance editor control suppression warning: " + ex.Message);
+                        return;
+                    }
                 }
             }
         }
