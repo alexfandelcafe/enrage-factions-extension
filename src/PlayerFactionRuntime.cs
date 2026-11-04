@@ -52,6 +52,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong SetCameraActiveHash = 0x87295BCA613800C8UL;
         private const ulong SetCameraCoordinateHash = 0xF9EE7D419EE49DE6UL;
         private const ulong PointCameraAtEntityHash = 0xFC2867E6074D3A61UL;
+        private const ulong PointCameraAtCoordHash = 0xF75497BB865F0803UL;
         private const ulong SetCameraFovHash = 0x27666E5988D9D429UL;
         private const ulong RenderScriptCamerasHash = 0x33281167E4942E4FUL;
         private const ulong DestroyCameraHash = 0x4E67E0B6D7FD5145UL;
@@ -1249,7 +1250,21 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex)
             {
                 Log.Write("Appearance preview camera initialization warning: " + ex);
+                int failedCamera = _appearanceCameraHandle;
                 _appearanceCameraHandle = 0;
+                try
+                {
+                    Function.Call(RenderScriptCamsHash, new InputArgument[] { false, true, 150, true, true, 0 });
+                    if (failedCamera != 0)
+                    {
+                        Function.Call(SetCameraActiveHash, new InputArgument[] { failedCamera, false });
+                        Function.Call(DestroyCameraHash, new InputArgument[] { failedCamera, true });
+                    }
+                }
+                catch (Exception cleanupEx)
+                {
+                    Log.Write("Appearance camera failure cleanup warning: " + cleanupEx.Message);
+                }
             }
 
             _appearanceEditorOpen = true;
@@ -1467,9 +1482,16 @@ namespace EnRAGEPlayerFactionExtension
                 float y = position.Y + (float)Math.Cos(radians) * distance;
                 float z = position.Z + 1.15f;
                 Function.Call(SetCameraCoordinateHash, new InputArgument[] { _appearanceCameraHandle, x, y, z });
-                Function.Call(PointCameraAtEntityHash, new InputArgument[]
+
+                // Aim slightly to the camera's right of the NPC's torso so the NPC itself lands
+                // in the left half of the screen, clear of the opaque settings panel on the right.
+                // The side vector follows the camera orbit, so the layout remains stable as it rotates.
+                float aimX = position.X + (float)Math.Cos(radians) * 1.05f;
+                float aimY = position.Y - (float)Math.Sin(radians) * 1.05f;
+                float aimZ = position.Z + 0.95f;
+                Function.Call(PointCameraAtCoordHash, new InputArgument[]
                 {
-                    _appearanceCameraHandle, _appearanceTargetPed.Handle, 0.0f, 0.0f, 0.75f, true
+                    _appearanceCameraHandle, aimX, aimY, aimZ
                 });
             }
             catch (Exception ex)
