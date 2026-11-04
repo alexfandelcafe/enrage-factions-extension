@@ -2670,34 +2670,22 @@ namespace EnRAGEPlayerFactionExtension
                 PatchIfFound(FindMethod(_rosterMenuType, "ActivateDetail", 0), nameof(FounderPatches.PlayerFactionMemberActivateDetailPrefix), true);
                 PatchIfFound(FindMethod(_rosterMenuType, "Draw", 0), nameof(FounderPatches.PlayerFactionRosterMenuDrawPrefix), true);
 
-                // While the custom appearance editor is open, the native enRAGE roster must not
-                // keep processing navigation/accept input behind it. Discover the input/update
-                // entry points by name because enRAGE builds can rename these private methods.
-                MethodInfo[] rosterModalMethods = _rosterMenuType.GetMethods(InstanceFlags)
-                    .Where(m => m.GetParameters().Length == 0 && m.ReturnType == typeof(void) &&
-                        m.Name != "Draw" && m.Name != "DrawDetail" && m.Name != "DetailActions" &&
-                        (m.Name.IndexOf("Input", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         m.Name.IndexOf("Navigate", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         m.Name.IndexOf("Update", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         m.Name.IndexOf("Process", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         m.Name.IndexOf("Handle", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         m.Name == "Activate" || m.Name == "Tick"))
-                    .ToArray();
-                foreach (MethodInfo modalMethod in rosterModalMethods)
-                    PatchIfFound(modalMethod, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
-                Log.Write("Appearance editor modal suppression targets: " +
-                    (rosterModalMethods.Length == 0 ? "none discovered" : string.Join(", ", rosterModalMethods.Select(m => m.Name).Distinct())) + ".");
+                // RosterMenu receives keyboard events through HandleKey(Keys). The editor
+                // suspends RosterMenu.IsOpen itself, so the native menu releases its pause/input
+                // state. Keep this one narrow guard for builds that dispatch a stale key event.
+                MethodInfo rosterHandleKey = _rosterMenuType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "HandleKey" && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType.FullName == "System.Windows.Forms.Keys");
+                PatchIfFound(rosterHandleKey, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
+                if (rosterHandleKey == null)
+                    Log.Write("WARNING: RosterMenu.HandleKey(Keys) not found; IsOpen suspension remains the primary input isolation.");
 
                 MethodInfo drawDetail = FindMethod(_rosterMenuType, "DrawDetail", 0);
-                // The roster can render its dossier separately from Draw(); suppress that path
-                // as well while the custom editor owns the screen.
-                PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPrefix), true);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPostfix), false);
                 if (drawDetail == null)
                     Log.Write("WARNING: RosterMenu.DrawDetail() not found; player faction dossier cannot switch to gang-member presentation.");
                 MethodInfo drawBar = FindMethod(_rosterMenuType, "DrawFactionBar", 1);
-                PatchIfFound(drawBar, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
                 PatchIfFound(drawBar, nameof(FounderPatches.PlayerFactionDrawBarPrefix), true);
                 PatchIfFound(drawBar, nameof(FounderPatches.PlayerFactionDrawBarPostfix), false);
             }
@@ -3033,7 +3021,7 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     object appearanceRecord = ReadMember(__instance, "_detail");
                     if (IsPlayerFactionRecord(appearanceRecord))
-                        Runtime.OpenAppearanceEditor(appearanceRecord);
+                        Runtime.OpenAppearanceEditor(appearanceRecord, __instance);
                     // Keep the character dossier open even when the editor cannot be opened
                     // (for example, the member has no live ped or is too far away).
                     return false;
