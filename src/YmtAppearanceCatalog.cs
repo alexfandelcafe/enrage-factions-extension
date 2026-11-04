@@ -553,12 +553,8 @@ namespace EnRAGEPlayerFactionExtension
 
         private static MetaPedCategory ResolveCategory(string drawable)
         {
-            // Specific terms (scarf/eyebrow/glasses) precede broader terms such as tie/head.
-            MetaPedCategory category = CategoryItems.FirstOrDefault(x => x.Matches(drawable));
-            if (category != null) return category;
-
-            // Ultimate YMT Helper's library may use catalogue group names rather than
-            // drawable filenames. Normalize common group labels to the editor's slots.
+            // Resolve broad catalogue groups before filename terms: "Headwear" contains
+            // "head", but it belongs to the hat slot rather than the bare-head slot.
             string value = NormalizeFieldName(drawable);
             if (value.Contains("headwear") || value.Contains("headgear"))
                 return GetCategory("hat");
@@ -575,7 +571,8 @@ namespace EnRAGEPlayerFactionExtension
             if (value.Contains("upperbody") || value.Contains("shirt") || value.Contains("topwear"))
                 return GetCategory("shirt");
 
-            return null;
+            // Specific terms (scarf/eyebrow/glasses) precede broader terms such as tie/head.
+            return CategoryItems.FirstOrDefault(x => x.Matches(drawable));
         }
 
         private static string ReadChildText(XmlNode node, string name)
