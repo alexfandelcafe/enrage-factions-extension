@@ -421,6 +421,14 @@ namespace EnRAGEPlayerFactionExtension
                             parts.Add(attribute.Value);
                     }
                 }
+                foreach (XmlNode child in current.ChildNodes)
+                {
+                    if (child.NodeType != XmlNodeType.Element) continue;
+                    string field = NormalizeFieldName(child.LocalName);
+                    if (field == "category" || field == "categoryname" ||
+                        field == "type" || field == "slot" || field == "parttype")
+                        parts.Add(child.InnerText);
+                }
                 current = current.ParentNode;
                 depth++;
             }
@@ -489,7 +497,28 @@ namespace EnRAGEPlayerFactionExtension
         private static MetaPedCategory ResolveCategory(string drawable)
         {
             // Specific terms (scarf/eyebrow/glasses) precede broader terms such as tie/head.
-            return CategoryItems.FirstOrDefault(x => x.Matches(drawable));
+            MetaPedCategory category = CategoryItems.FirstOrDefault(x => x.Matches(drawable));
+            if (category != null) return category;
+
+            // Ultimate YMT Helper's library may use catalogue group names rather than
+            // drawable filenames. Normalize common group labels to the editor's slots.
+            string value = NormalizeFieldName(drawable);
+            if (value.Contains("headwear") || value.Contains("headgear"))
+                return GetCategory("hat");
+            if (value.Contains("eyewear"))
+                return GetCategory("glasses");
+            if (value.Contains("neckwear") || value.Contains("bandana"))
+                return GetCategory("scarf");
+            if (value.Contains("footwear"))
+                return GetCategory("boots");
+            if (value.Contains("lowerbody") || value.Contains("trousers"))
+                return GetCategory("pants");
+            if (value.Contains("outerwear") || value.Contains("jacket"))
+                return GetCategory("coat");
+            if (value.Contains("upperbody") || value.Contains("shirt") || value.Contains("topwear"))
+                return GetCategory("shirt");
+
+            return null;
         }
 
         private static string ReadChildText(XmlNode node, string name)
