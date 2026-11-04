@@ -143,6 +143,8 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextAppearanceRestoreAt;
         private bool _appearanceEditorOpen;
         private bool _appearanceAssetListOpen;
+        private readonly object _appearanceInputSync = new object();
+        private readonly Queue<int> _appearancePendingKeys = new Queue<int>();
         private object _appearanceRosterMenu;
         private bool _appearanceRosterWasOpen;
         private int _appearanceCategoryIndex;
@@ -1233,6 +1235,7 @@ namespace EnRAGEPlayerFactionExtension
             _appearanceAssetIndex = 0;
             _appearanceAssetListOpen = false;
             _appearanceViewAngle = 0f;
+            lock (_appearanceInputSync) _appearancePendingKeys.Clear();
             RefreshAppearanceCatalog();
 
             MemberAppearanceProfile savedProfile;
@@ -1425,6 +1428,18 @@ namespace EnRAGEPlayerFactionExtension
             UpdateAppearanceCamera();
             EnsureAppearanceCameraRendering();
 
+            int pendingKeyCode = -1;
+            lock (_appearanceInputSync)
+            {
+                if (_appearancePendingKeys.Count > 0)
+                    pendingKeyCode = _appearancePendingKeys.Dequeue();
+            }
+            if (pendingKeyCode >= 0)
+            {
+                HandleAppearanceEditorKey(pendingKeyCode);
+                return;
+            }
+
             // EnRAGE disables frontend/gameplay controls while its roster is open. Read both
             // enabled and disabled control states so gamepad navigation still works in that case.
             int[] controls =
@@ -1443,7 +1458,7 @@ namespace EnRAGEPlayerFactionExtension
         }
 
         // EnRAGE's keyboard path is a WinForms OnKeyDown event, not PAD control polling.
-        // Harmony forwards those physical key events here while the editor owns the screen.
+        // The event hook only enqueues; this method runs later on the ScriptHook game thread.
         internal bool HandleAppearanceEditorKey(int keyCode)
         {
             if (!_appearanceEditorOpen) return false;
@@ -1475,6 +1490,17 @@ namespace EnRAGEPlayerFactionExtension
             // Consume all keyboard input while the editor is active so EnRAGE cannot reopen
             // its roster, trigger another panel, or dispatch a key to the hidden dossier.
             return true;
+        }
+
+        internal void QueueAppearanceEditorKey(int keyCode)
+        {
+            if (!_appearanceEditorOpen) return;
+            lock (_appearanceInputSync)
+            {
+                // Limit queued repeats if the game window sends a burst while the script is busy.
+                if (_appearancePendingKeys.Count < 16)
+                    _appearancePendingKeys.Enqueue(keyCode);
+            }
         }
 
         private bool AppearanceControlJustPressed(int control)
@@ -1745,12 +1771,6 @@ namespace EnRAGEPlayerFactionExtension
                 float z = position.Z + 1.15f;
                 Function.Call(SetCameraCoordinateHash, new InputArgument[] { _appearanceCameraHandle, x, y, z });
 
-                // Aim slightly to the camera's right of the NPC's torso so the NPC itself lands
-                // in the left half of the screen, clear of the opaque settings panel on the right.
-                // The side vector follows the camera orbit, so the layout remains stable as it rotates.
-                float aimX = position.X + (float)Math.Cos(radians) * 1.05f;
-                float aimY = position.Y - (float)Math.Sin(radians) * 1.05f;
-                float aimZ = position.Z + 0.95f;
                 // Aim at the ped itself, not a point offset in world space. This keeps the
                 // selected NPC inside the frame for every orbit angle and heading.
                 Function.Call(PointCameraAtEntityHash, new InputArgument[]
@@ -1869,12 +1889,13 @@ namespace EnRAGEPlayerFactionExtension
             bool wasOpen = _appearanceEditorOpen;
             _appearanceEditorOpen = false;
             _appearanceAssetListOpen = false;
+            lock (_appearanceInputSync) _appearancePendingKeys.Clear();
 
             try
             {
                 if (_appearanceCameraHandle != 0)
                 {
-                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { false, true, 350, true, true, 0 });
+                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { false, false, 0, true, true, 0 });
                     Function.Call(SetCameraActiveHash, new InputArgument[] { _appearanceCameraHandle, false });
                     Function.Call(DestroyCameraHash, new InputArgument[] { _appearanceCameraHandle, true });
                 }
