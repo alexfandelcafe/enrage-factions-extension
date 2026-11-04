@@ -133,7 +133,7 @@ La primera versión añade **Modificar apariencia** a la ficha de los miembros v
 
 El editor no incluye ni redistribuye activos del juego. Lee componentes de archivos XML exportados por YMT-Trainer desde:
 
-`<carpeta de RDR2>\\YMTTFiles\\SavedYMTs\\*.xml`
+`<carpeta de RDR2>/YMTTFiles/SavedYMTs/*.xml`
 
 Exportá uno o más conjuntos desde YMT-Trainer y comprobá que los XML estén en esa carpeta. El catálogo reconoce drawables de sombreros, pelo, barba, cabeza, camisas, chalecos, abrigos, pantalones, botas, guantes, cinturones, pañuelos, corbatas y otras categorías. Sólo aparecen piezas halladas en los XML exportados.
 
