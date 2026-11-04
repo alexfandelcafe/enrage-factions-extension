@@ -1,209 +1,425 @@
 # EnRAGE Player Faction Extension — v0.3.6
 
-Extensión independiente para crear y administrar una facción propia en enRAGE. Mantiene al personaje activo de la historia como líder nativo, registra el campamento en el sistema de campamentos de enRAGE y añade un administrador interactivo en el campamento.
+Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
-## Cambios de v0.3.6 — campamento por prestigio, vida social y defensa
+> Esta guía describe el comportamiento actual del código de \`main\`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
 
-### Mejora visual según el prestigio
+## Índice
 
-- `CampKit.CampLooks["player_faction"]` se configura desde la escala de PRESTIGIO de enRAGE en cinco etapas (0–19, 20–39, 40–59, 60–79 y 80–100).
-- Las etapas incorporan progresivamente más tiendas, camas, asientos, faroles, leña, cajas, barriles, cofres y botellas. Cuando cambia de etapa, el kit físico se reconstruye una sola vez y solo cuando el campamento está cerca y la colisión está cargada.
+- [Resumen del funcionamiento](#resumen-del-funcionamiento)
+- [Fundar la banda](#fundar-la-banda)
+- [Líder, roster y rangos](#líder-roster-y-rangos)
+- [Integración con Companion y controles](#integración-con-companion-y-controles)
+- [Vida de campamento](#vida-de-campamento)
+- [Administrador y menú de gestión](#administrador-y-menú-de-gestión)
+- [Prestigio y aspecto del campamento](#prestigio-y-aspecto-del-campamento)
+- [Territorio, recursos y opciones nativas](#territorio-recursos-y-opciones-nativas)
+- [Persistencia y recuperación](#persistencia-y-recuperación)
+- [Configuración](#configuración)
+- [Instalación y compilación](#instalación-y-compilación)
+- [Registro y diagnóstico](#registro-y-diagnóstico)
+- [Límites conocidos](#límites-conocidos)
 
-### Interacción social, charlas y escenarios
+## Resumen del funcionamiento
 
-- Los miembros registrados en el campamento exponen una interacción contextual `Hablar`; si la API de prompt de un ped no devuelve un grupo válido, queda habilitada la ruta de teclado contextual como respaldo.
-- `Saludar` aumenta `Hacia ti`; `Provocar` lo disminuye, pero no convierte al miembro en enemigo del jugador. Los valores se persisten por ID del roster y se reflejan en la ficha de enRAGE y en la disposición que usa Companion.
-- Los miembros intentan usar puntos de escenario próximos a los objetos del `CampKit`; los puntos se reservan para reducir solapamientos. Si no hay un escenario de objeto libre o falla el intento, se escoge una actividad alternativa de pie/sentado, lectura, humo, guitarra, fuego, pesca y otros escenarios de campamento.
-- Periódicamente, dos miembros próximos intentan intercambiar líneas ambientales mediante `PLAY_PED_AMBIENT_SPEECH_NATIVE` (`0x8E04FEDD28D42462`). Se pasa un diccionario de voz vacío para pedir al juego que use la voz ambiental actual del propio ped, en vez de forzar el banco de voz de un sheriff. El formato de `ScriptedSpeechParams` sigue la estructura de 0x40 bytes descrita por [RDR2 NativeDB](https://www.rdr2mods.com/nativedb/index/audio/_play_ambient_speech1/) y la implementación de [ScriptHookRDR2DotNet V2](https://github.com/onenowy/ScriptHookRDR2DotNet-V2/blob/master/source/scripting_v3/RDR2/Entities/Peds/Ped.cs). La reproducción sigue dependiendo de que el juego admita la línea y de los bancos de voz disponibles; si una frase no se reconoce, el campamento continúa funcionando.
+La extensión crea una facción con identificador fijo \`player_faction\`. El personaje de historia activo —Arthur o John— se registra como su líder real en el roster nativo de enRAGE. No se crea un líder NPC sustituto.
+
+Una vez fundada, la banda dispone de:
+
+- Un campamento exterior registrado como \`CampSite\` nativo de enRAGE, con su marcador de mapa y sus objetos físicos \`CampKit\`.
+- Un NPC administrador que permite cambiar el nombre, el alias del líder, los nombres de rango y varias opciones nativas de la facción.
+- Integración con el roster y, cuando está instalada, con **EnRAGECompanionsExtension** para reclutas, órdenes de seguimiento, relaciones y recuperación de personajes.
+- Miembros que regresan al campamento cuando dejan de seguir al jugador, buscan actividades de campamento y mantienen conversaciones ambientales entre ellos.
+- Defensa reactiva del campamento frente a NPCs que estén atacando directamente al jugador, a un residente o al administrador.
+- Recuperación de datos y del campamento después de recargar los scripts.
+
+La extensión se conecta a enRAGE mediante Reflection y Harmony. No necesita una referencia de compilación a \`NemesisMod.dll\`; localiza los tipos y métodos de enRAGE en tiempo de ejecución.
+
+## Fundar la banda
+
+### Encontrar al fundador
+
+Antes de fundar la banda aparece un NPC fundador cerca de las coordenadas configuradas en el INI. Por defecto está cerca de Beecher's Hope. El marcador del fundador ayuda a localizarlo.
+
+Al acercarte, aparece su prompt contextual de fundación. Al mantener la interacción:
+
+1. Se solicita el nombre de la banda mediante el teclado del juego.
+2. Se abre el selector de ubicación del campamento.
+3. Al confirmar una ubicación, la pantalla se funde a negro y la extensión intenta registrar el campamento con la API nativa de enRAGE.
+4. Si enRAGE acepta la ubicación, se guardan el identificador, la región y las coordenadas reales del sitio. El jugador viaja hasta ese punto y vuelve la imagen.
+5. La banda recibe una contribución inicial de **10 puntos de control territorial** en el distrito del campamento. La operación se marca como realizada para no repetirla en cada recarga.
+
+Las ubicaciones disponibles son:
+
+| Ubicación | Zona |
+|---|---|
+| Cumberland Forest | Bosque al norte de Valentine |
+| Big Valley | Praderas al oeste de Strawberry |
+| Scarlett Meadows | Campo abierto de Lemoyne |
+| Tall Trees | Bosque al oeste de Blackwater |
+| Roanoke Ridge | Bosque rocoso del noreste |
+| Rio Bravo | Desierto de New Austin |
+| Grizzlies East | Montañas del este de Ambarino |
+
+No existe una opción de «ubicación actual». Beecher's Hope se reserva como zona del fundador y no se ofrece como ubicación del nuevo campamento.
+
+### Validaciones de ubicación
+
+La creación depende de las reglas nativas de enRAGE. Entre las condiciones que pueden provocar un rechazo están:
+
+- El perímetro de exclusión de Fort Wallace.
+- Otro campamento de la misma facción a menos de 400 metros.
+- El límite nativo de seis campamentos para una facción.
+- Otras validaciones internas de enRAGE.
+
+Cuando se rechaza un sitio, la extensión informa del motivo detectado y permite elegir otra ubicación. No da por fundada la banda si el registro del campamento falla.
+
+### Facción ya existente sin campamento
+
+Si la facción ya está fundada pero no tiene un \`CampSite\` registrado, la ficha del líder en el roster ofrece la acción **Elegir campamento**. El selector permite colocar el campamento sin volver a fundar la banda.
+
+## Líder, roster y rangos
+
+### Identidad del líder
+
+El líder es el personaje de historia activo:
+
+- \`vdl_arthur\` para Arthur.
+- \`vdl_john\` para John.
+
+La extensión mantiene el ID nativo del personaje y utiliza la página de líder que ya proporciona enRAGE. Desde esa ficha se puede cambiar el nombre visible del líder; esto modifica su alias, no su identidad ni su ID de historia.
+
+### Miembros de la banda
+
+Los miembros se administran desde el roster nativo de enRAGE. La extensión no crea un segundo roster separado. Los datos de cada registro —ID, rango, estado y pertenencia a la banda— siguen siendo los datos que usa enRAGE.
+
+Para los miembros vivos de \`player_faction\`, la ficha muestra la sección de miembro de banda y el valor **HACIA TI**. La extensión cambia temporalmente el modo de presentación mientras se dibuja la ficha y restaura después el indicador original del registro; no convierte permanentemente a esos personajes en personajes de historia.
+
+### Ascender y degradar
+
+Al seleccionar un miembro vivo de la facción en el roster aparecen las acciones que correspondan a su rango:
+
+- **Ascender rango**, si todavía no alcanzó el rango 5.
+- **Degradar rango**, si está por encima del rango 1.
+
+El ascenso utiliza \`NemesisMod.Promote(NemesisRecord)\` cuando está disponible. La degradación reduce un nivel y reinicia la XP de rango. Los límites son los cinco rangos nativos de enRAGE; no se crean niveles nuevos ni se modifican los umbrales internos.
+
+Después del cambio se guarda el roster y se vuelve a aplicar la relación que Companion utiliza para el miembro.
+
+### Relación y valor «HACIA TI»
+
+La extensión sincroniza la afinidad de Companion de acuerdo con el rango: el rango 1 usa disposición neutral y los rangos 2 a 5 usan disposición amistosa. No convierte a los miembros en enemigos del jugador.
+
+El valor que muestra enRAGE en **HACIA TI** sigue esta escala base:
+
+| Rango | Valor base |
+|---:|---:|
+| 1 | -5 |
+| 2 | 15 |
+| 3 | 35 |
+| 4 | 65 |
+| 5 | 90 |
+
+La extensión proporciona ese valor a través de \`RegardOfRecord\`; no sustituye el sistema general de relaciones de las demás facciones.
+
+## Integración con Companion y controles
+
+La integración completa con **EnRAGECompanionsExtension** permite que los reclutas de Companion pertenezcan a la facción del jugador y que sus órdenes y datos sigan vinculados al mismo registro del roster.
+
+### Identificadores fijos
+
+Los dos identificadores de reclutamiento deben ser:
+
+\`\`\`ini
+RecruitGangId=player_faction
+RecruitRosterId=player_faction
+\`\`\`
+
+La extensión fuerza esos valores cuando detecta la integración de Companion. No deben cambiarse por otros IDs en el INI de Companion.
+
+Los registros creados por Companion con prefijos \`extcomp_\` y \`extvdl_\` se reconcilian con el roster normal de enRAGE. La extensión revisa tanto \`NemesisMod.Roster\` como \`StoryRoster\`, mueve los registros aplicables a la facción \`player_faction\` y guarda el roster. No intenta reconocer miembros buscando NPCs que compartan el mismo modelo.
+
+### Interacción social nativa: R/F
+
+**Los miembros de la facción usan la interacción social nativa de RDR2.** Al apuntar/enfocar a un miembro y usar los controles nativos de saludo o provocación —R/F con la configuración de teclado habitual— se ejecuta la interacción del juego.
+
+La extensión ya no muestra el menú contextual propio **«Hablar»** para los miembros. Tampoco reemplaza el sistema social nativo por una acción de diálogo con G.
+
+Para que el sistema nativo siga disponible después de reclutar o recargar scripts, la extensión:
+
+- Mantiene a los miembros seleccionables como objetivo y habilita las banderas de ped que necesita la interacción social.
+- Restaura la configuración después de que Companion aplique sus perfiles de reclutado liberado o despedido.
+- Permite que se ejecute el ciclo social original de enRAGE/RDR2 para los miembros de la facción.
+- Oculta únicamente el prompt social adicional de enRAGE después de su actualización.
+
+### Orden de seguimiento: G
+
+La orden independiente de Companion para llamar al miembro o hacer que siga al jugador se conserva. La extensión no bloquea el prompt genérico de seguimiento ni elimina la acción de G.
+
+En otras palabras:
+
+- **R/F:** saludo y provocación nativos de RDR2.
+- **G:** orden de seguimiento/llamada de Companion.
+- **«Hablar» contextual propio de la extensión:** eliminado para los miembros.
+
+Las teclas efectivas dependen de la configuración de controles del juego y de Companion.
+
+## Vida de campamento
+
+La vida de campamento se aplica a miembros vivos de \`player_faction\` que Companion puede vincular inequívocamente con un registro y un ped real. Los miembros que están siguiendo activamente al jugador no reciben las tareas de regreso ni las rutinas de ocio; cuando dejan de seguirlo, vuelven a entrar en el ciclo de campamento.
+
+### Regreso al campamento
+
+- La extensión reutiliza el handle exacto del NPC asociado al registro del roster.
+- Si el personaje está montado, espera a que Companion complete el desmontaje antes de iniciar la navegación.
+- El miembro camina hacia una posición libre alrededor del centro del campamento.
+- Se considera que llegó al aproximarse a unos 3,8 metros del destino.
+- Si una tarea posterior lo aleja más de 18 metros del centro cuando ya estaba instalado, se le vuelve a ordenar regresar.
+
+No se identifica a un miembro por su modelo ni se sustituye por otro NPC aleatorio.
+
+### Recuperación de miembros que no tienen un ped vivo
+
+Los registros guardados del roster pueden sobrevivir a una sesión aunque las entidades del mundo no. Cuando el campamento está cargado y el jugador se encuentra dentro del área de trabajo, la extensión puede volver a materializar hasta **tres registros faltantes por escaneo** usando el \`ModelHash\` guardado en el registro.
+
+Se conserva el mismo \`RosterId\`. Cuando Companion guardó el atuendo del recluta, la integración vuelve a aplicarlo al ped materializado y registra el nuevo handle en su caché. Si el handle exacto sigue existiendo, se reutiliza en lugar de crear otro representante.
+
+Tras cerrar completamente el juego, los handles temporales se descartan porque RDR2 puede reutilizarlos para otras entidades. La identidad persistente del miembro permanece en el roster y permite recuperar su presencia física cuando el campamento vuelve a cargarse.
+
+### Escenarios y actividades
+
+Al llegar, cada miembro intenta usar un punto de escenario cercano a un objeto del \`CampKit\`: asientos, camas u otros puntos que enRAGE haya registrado para el campamento. Los puntos elegidos se reservan y se comprueba si otro miembro o el administrador ya está usando un punto cercano. Esto reduce que varios NPCs se acumulen en el mismo lugar.
+
+Si no hay un punto utilizable, se intenta una actividad alternativa de pie o sentado. La lista incluye, entre otras:
+
+- Esperar de pie, mirar alrededor o adoptar una postura relajada.
+- Sentarse en el suelo, descansar, fumar o tomar café.
+- Tocar guitarra, leer, dibujar o escribir.
+- Apoyarse en una pared, beber, martillar, usar una armónica o pescar.
+- Sentarse en sillas, bancos o junto al fuego.
+
+Cuando un escenario termina, el miembro busca de nuevo un punto libre. Si un punto no puede utilizarse, se prueba otro en lugar de insistir indefinidamente en el mismo.
+
+### Conversaciones ambientales
+
+Cuando hay al menos dos miembros cerca del centro del campamento, la extensión puede iniciar intercambios de voz ambientales entre ellos. Se seleccionan saludos o frases genéricas de conversación y, tras una breve pausa, una segunda persona puede responder.
+
+Se usa el nativo de voz ambiental de RDR2 con el banco de voz del propio ped, sin imponer un banco de voz fijo a todos los reclutas. La reproducción depende de las líneas y bancos de voz que el juego tenga disponibles para cada personaje; si una frase no está disponible, el resto del sistema de campamento continúa funcionando.
 
 ### Defensa reactiva
 
-- Los residentes solo pasan a combate cuando el juego marca que un agresor está combatiendo al jugador, a un residente o al administrador. Un NPC que solo cruza el campamento no activa la defensa.
-- Cuando cesa el contacto de combate, los defensores abandonan la tarea tras un breve margen y regresan a la rutina del campamento.
+La defensa no se activa por el simple hecho de que un NPC pase cerca del campamento o lleve un arma. La extensión busca un agresor que esté combatiendo directamente al jugador, a un residente de la banda o al administrador.
 
-### Bloqueo de falsos campamentos enemigos propios
+Cuando detecta ese combate:
 
-- Antes de `LearnCampSites`, la extensión vuelve a normalizar el roster y marca los handles exactos de los miembros existentes como entidades propias de enRAGE.
-- Los prefijos de `SpawnCamp` y `RevealCamp`, junto con el posprocesado de `AssignCamps`, impiden que los miembros o el `CampSite` de `player_faction` se conviertan en un campamento enemigo o generen la notificación «encontraste un campamento».
-- La comprobación de compatibilidad también elimina `LiveCamp` obsoletos asignados a `player_faction` o detectados dentro de 150 m del sitio propio. Los sitios nativos válidos de otras zonas se conservan; las relaciones/guerras con facciones externas siguen sujetas a los ajustes nativos.
+1. Los miembros residentes que están en el área del campamento pueden interrumpir su escenario.
+2. Se les ordena combatir contra el agresor identificado.
+3. Se conserva ese objetivo mientras continúe la amenaza.
+4. Cuando el agresor deja de combatir al jugador o a los miembros, se espera un breve margen y los defensores vuelven a las rutinas de campamento.
 
-## Cambios de v0.3.5 — roster físico, fuerza inicial y ajustes nativos
+La defensa de residentes es distinta de la opción nativa **Responder a disparos** de enRAGE, que controla otros comportamientos de patrullas y eventos.
 
-- Los registros de Companion `extcomp_` / `extvdl_` se recuperan tanto de `NemesisMod.Roster` como de `StoryRoster`; los registros antiguos de Companion se migran al roster normal de `player_faction` para que no queden invisibles en otra pestaña del roster.
-- Cuando el campamento está cargado, la extensión materializa hasta tres miembros faltantes por escaneo a partir de los registros vivos y sus `ModelHash`, preservando el `Id` del roster y, cuando Companion guardó un atuendo, restaurándolo. No busca NPCs por modelo y no crea un segundo representante si el mismo `RosterId` ya tiene una entidad rastreada o guardada en este proceso. Tras reiniciar el juego, se vuelve a materializar la misma identidad persistente porque los peds del mundo no sobreviven como entidades vivas entre sesiones.
-- El puente ya no depende de que `EnRAGEHooks._latestMainInstance` haya recibido su primer tick; si sigue en `null` al recargar scripts, usa la instancia activa de enRAGE. Si aún faltan listas o caché, escribe un diagnóstico y reintenta.
-- La fuerza inicial se fija a cero y se baselina la lista de IDs que ya existían en el roster o la caché de Companion en el momento de la fundación. Así, los registros antiguos que Companion normaliza después de fundar la banda no se cuentan por error como reclutas nuevos. Los IDs incorporados después de la fundación sí suman `NemesisMod.NamedWorth(rank)`.
-- Las opciones del administrador escriben y verifican los campos nativos de `Gang`: `TurfWars`, `Feuds`, `GangLifeEvents` y `AnswersGunfire`. Son permisos para que enRAGE ejecute sus sistemas bajo las condiciones normales, no órdenes que inicien inmediatamente una guerra/evento.
-  - `TurfWars`: la lógica nativa requiere que las dos facciones participantes tengan guerras territoriales habilitadas y suficiente control en el mismo distrito.
-  - `Feuds`: habilita que enRAGE considere esa facción para sus sistemas nativos de rivalidad; no crea por sí sola una rivalidad concreta.
-  - `GangLifeEvents`: habilita eventos cuyo ámbito es una banda y que además cumplen sus condiciones/azar.
-  - `AnswersGunfire`: cambia los comportamientos nativos de patrullas/raids ante disparos cercanos según los radios y estados del evento; no hace que cada NPC del campamento ataque siempre que oye un disparo.
+## Administrador y menú de gestión
 
-## Cambios de v0.3.4 — reinicio, prestigio y jerarquía de miembros
+Cuando el jugador está cerca del campamento aparece un NPC administrador usando el modelo configurado para el fundador. Se mantiene cerca del sitio y desaparece cuando el jugador se aleja lo suficiente; al regresar, se vuelve a crear. Si se recargan los scripts durante la misma sesión, la extensión intenta reconectar con el handle del administrador antes de crear otro.
 
-### Administración del campamento después de recargar scripts
+El administrador:
 
-- Al abortar/cerrar una instancia del script, se ocultan y eliminan los prompts nativos del fundador y del administrador y se desinstalan únicamente los hooks Harmony de esta extensión.
-- Al iniciar de nuevo, los hooks se instalan con el mismo ID de Harmony después de limpiar cualquier patch residual de una instancia anterior.
-- El prompt del administrador usa el grupo de interacción real del ped, permite el grupo nativo `0` si el juego lo devuelve y comprueba el mismo modo de mantener pulsado que Companion.
-- La interacción contextual tiene una ruta de entrada directa de respaldo; el registro `extension.log` indica si el menú abrió, si falló el registro de la facción, si faltó el renderer y qué controles de navegación recibió.
-- Antes de abrir la administración se vuelve a asegurar el registro nativo de `player_faction`. Si enRAGE todavía no está disponible, el menú informa del motivo en lugar de quedar aparentemente abierto sin funcionar.
+- Es un NPC de servicio del campamento, no un recluta.
+- Tiene protección propia: no se ofrece como objetivo normal y no se le aplican las rutinas sociales de los miembros.
+- Utiliza el mismo sistema de selección de escenarios del campamento. La guitarra es una actividad posible, no una tarea permanente obligatoria.
+- No puede incorporarse como recluta genérico de Companion.
 
-### Prestigio de la banda
+Al acercarte y mantener su prompt contextual se abre **ADMINISTRACIÓN DE LA BANDA**. El menú usa arriba/abajo para moverse, aceptar para elegir y atrás para volver o cerrar.
 
-En la barra de la facción del jugador, el rótulo **NOTORIEDAD** se reemplaza por **PRESTIGIO**, con los estados DESCONOCIDA, EMERGENTE, RECONOCIDA, TEMIDA y LEGENDARIA. Se reutiliza la escala de 0 a 100 que enRAGE ya expone para esa banda; la extensión no modifica el cálculo interno de notoriedad ni la IA de otras facciones.
+### Opciones disponibles
 
-### Ascender y degradar miembros desde su ficha
+| Opción | Funcionamiento |
+|---|---|
+| Renombrar banda | Cambia el nombre visible de la facción; conserva el ID \`player_faction\`. |
+| Nombre visible del líder | Cambia el alias mostrado; Arthur/John conserva su ID nativo. |
+| Administrar rangos | Permite renombrar los cinco rangos existentes. |
+| Guerras territoriales | Activa o desactiva el permiso nativo \`TurfWars\`. |
+| Rivalidades entre bandas | Activa o desactiva \`Feuds\`. |
+| Eventos de banda | Activa o desactiva \`GangLifeEvents\`. |
+| Responder a disparos | Activa o desactiva \`AnswersGunfire\`. |
 
-- Al seleccionar un miembro vivo de `player_faction` en el roster, sus acciones de detalle incluyen **Ascender rango** y/o **Degradar rango** según su rango actual.
-- El ascenso usa el método nativo `NemesisMod.Promote(NemesisRecord)` cuando está disponible; la degradación baja un nivel y reinicia su XP de rango. Los límites se mantienen entre 1 y 5.
-- Tras cada cambio, se guarda `Roster` y se vuelve a aplicar la relación de Companion para ese mismo registro.
+La pantalla lateral muestra hombres, suministros y tesorería sincronizados con enRAGE, además de los identificadores fijos de la facción y el roster.
 
-### Ficha de miembro de banda y «HACIA TI»
+**Los nombres de rango son etiquetas visuales.** La extensión no cambia los umbrales de XP, las plazas ni la estructura interna de los cinco rangos de enRAGE.
 
-- Companion mantiene la relación viva mediante `Hate`, `Fear` y `Disposition`; este build aplica `Disposition=Neutral` al rango 1 y `Friendly` a los rangos 2–5, sin convertir al miembro en hostil. `Like` se escribe solo si otra versión de NemesisRecord lo expone.
-- La línea «HACIA TI» que muestra el dossier de enRAGE se obtiene por separado de `NemesisMod.RegardOfRecord(NemesisRecord)`. Para `player_faction` su valor sigue el rango del miembro: rango 1 −5, rango 2 15, rango 3 35, rango 4 65 y rango 5 90.
-- Durante el dibujo de la ficha, la extensión presenta temporalmente el registro como miembro del reparto de banda para que enRAGE muestre la sección «CON LA BANDA» y la fila «HACIA TI»; inmediatamente después restaura el flag `Story` original. No deja al registro convertido permanentemente en personaje de historia.
-- Los registros guardados `extcomp_` y `extvdl_` se reconcilian directamente desde `NemesisMod.Roster`, incluso si la caché de handles de Companion todavía está vacía tras recargar. Se fija su `Gang` en `player_faction` y se guardan en el roster nativo. No se identifica ni reemplaza a nadie por modelo.
-- Los IDs de Companion siguen fijos: `RecruitGangId=player_faction` y `RecruitRosterId=player_faction`.
+## Prestigio y aspecto del campamento
 
-## Cambios de v0.3.0 — administrador del campamento
+La barra de la facción muestra **PRESTIGIO** en lugar de **NOTORIEDAD**. Utiliza el valor nativo de enRAGE en la escala de 0 a 100; no reemplaza ni recalcula el sistema de notoriedad.
 
-### NPC administrador
+| Valor | Estado mostrado |
+|---:|---|
+| 0–19 | DESCONOCIDA |
+| 20–39 | EMERGENTE |
+| 40–59 | RECONOCIDA |
+| 60–79 | TEMIDA |
+| 80–100 | LEGENDARIA |
 
-- Cuando la banda está fundada y el jugador se acerca al campamento, aparece un NPC administrador usando el mismo modelo configurado para el fundador.
-- Ejecuta el escenario `WORLD_HUMAN_SIT_GUITAR` y la extensión vuelve a iniciarlo si otra tarea lo interrumpe.
-- Reutiliza la protección del fundador: invulnerabilidad, no seleccionable como objetivo, eventos permanentes bloqueados, atributos de combate desactivados y relación amistosa con el jugador.
-- El NPC se mantiene cerca del campamento; fuera de la zona se elimina y se vuelve a crear cuando el jugador regresa. Si recargás los scripts mientras sigue presente, la extensión intenta reconectarse al handle guardado para no duplicarlo.
-- Al mantener la interacción contextual aparece el menú de administración.
+El mismo valor selecciona una de cinco configuraciones visuales de \`CampKit.CampLooks["player_faction"]\`. A medida que aumenta el prestigio, el campamento incorpora progresivamente más elementos —tiendas, camas, asientos, faroles, leña, cajas, barriles, cofres y botellas— y puede cambiar su distribución.
 
-### Menú de la facción
+La configuración visual se actualiza al cambiar de etapa. La reconstrucción física se difiere hasta que el jugador esté cerca y la colisión del terreno esté cargada; no se desmonta el campamento a distancia solo para cambiar su aspecto.
 
-El menú puede cambiar:
+## Territorio, recursos y opciones nativas
 
-- **Nombre de la banda**.
-- **Nombre visible del líder**, sin alterar el ID de Arthur o John.
-- **Nombres visibles de los rangos nativos**.
-- **Guerras territoriales** de enRAGE.
-- **Rivalidades** entre facciones.
-- **Eventos de vida de la banda**.
-- **Respuesta a disparos**.
+### Territorio
 
-La pantalla lateral muestra hombres, suministros y tesorería reflejados desde los datos nativos de enRAGE. Los controles fijos también quedan visibles para identificar la facción que se está administrando.
+Al fundar el campamento se intenta añadir un primer apoyo de 10 puntos de control al distrito donde se encuentra. Se usa el sistema nativo de territorio de enRAGE y se guarda un indicador para no volver a aplicar esa contribución después de cada recarga.
 
-**Límite intencional de los rangos:** esta versión permite renombrar los rangos existentes, pero conserva sus umbrales internos y plazas de enRAGE. No inventa ni agrega rangos, no cambia promociones de miembros ni crea un sistema paralelo de jerarquías, para no romper la lógica nativa de rosters.
+### Hombres, suministros y tesorería
 
-### IDs fijos para compatibilidad
+La extensión utiliza los mapas nativos de enRAGE para hombres, suministros y tesorería. Al inicializar una banda nueva, los tres valores empiezan en cero. La pantalla de administración muestra esos valores nativos; no mantiene una economía paralela.
 
-Los IDs no se pueden editar desde el menú y se fuerzan a estos valores al cargar los datos:
+La fuerza se sincroniza a partir de los IDs del roster:
 
-```ini
-RecruitGangId=player_faction
-RecruitRosterId=player_faction
-```
+- Los miembros que ya estaban guardados cuando se funda la banda se registran como línea base y no inflan la fuerza inicial.
+- Los nuevos IDs incorporados después de la fundación aportan el valor de fuerza nativo correspondiente a su rango (\`NemesisMod.NamedWorth(rank)\`).
+- Los ascensos y degradaciones actualizan la contribución de ese registro.
+- Las incorporaciones ya contabilizadas no vuelven a sumarse en cada escaneo.
 
-No cambies esos dos valores en `EnRAGECompanionsExtension.ini`: la Companion Extension los usa para incorporar sus reclutas a la facción de este proyecto.
+Los suministros y la tesorería siguen siendo los valores gestionados por enRAGE y sus sistemas nativos.
 
-## Restauración del campamento al recargar
+### Opciones de facción
 
-- La extensión registra `player_faction` antes de buscar su `CampSite`.
-- enRAGE carga `camps.json` antes de registrar esta facción y puede descartar una fila cuyo dueño todavía no existe. Si falta en `Camps.Extra`, la extensión reconstruye el `CampSite` desde el ID y las coordenadas de `PlayerFaction.json`, lo incorpora a la lista nativa y vuelve a guardar `camps.json`.
-- Cuando el jugador está a menos de 140 m y la colisión del terreno ya está cargada, la extensión limpia una posible entrada obsoleta de `CampKit` y vuelve a solicitar el montaje de los objetos.
-- El marcador del campamento usa el estilo nativo `BLIP_STYLE_MP_CAMP`. Al recargar el script, se limpia el handle anterior y **no** se recrea a partir del JSON: vuelve a aparecer solo cuando enRAGE confirma que el `CampSite` nativo ya fue restaurado.
-- El fundador no vuelve a aparecer cuando la banda ya está fundada.
+Las opciones del administrador modifican y verifican directamente los campos nativos de \`Gang\`:
 
-**Importante:** los objetos físicos y el administrador aparecen cuando el jugador vuelve a acercarse. El montaje de objetos requiere que el terreno esté cargado. Conservá `PlayerFaction.json` y `camps.json` si querés mantener el sitio del campamento.
+- **TurfWars:** permite que enRAGE considere a la banda para guerras territoriales. La otra facción participante también debe tenerlas habilitadas y deben cumplirse las condiciones de control del distrito.
+- **Feuds:** permite que enRAGE considere a la banda para sus sistemas de rivalidad. Activarlo no declara una guerra de inmediato.
+- **GangLifeEvents:** habilita eventos cuyo ámbito sea una banda, sujetos a las condiciones y probabilidades del sistema nativo.
+- **AnswersGunfire:** habilita las respuestas nativas de patrullas/eventos ante disparos cercanos. No obliga a todos los residentes del campamento a atacar cada vez que oyen un disparo.
 
-## Marcador del campamento — PROPERTY
+Los valores iniciales de una banda nueva son: guerras territoriales activadas; rivalidades, eventos de banda y respuesta nativa a disparos desactivados. Se pueden cambiar desde el administrador.
 
-El campamento utiliza `BLIP_STYLE_MP_CAMP` mediante `BLIP_ADD_FOR_COORDS`; no llama a `SET_BLIP_CATEGORY` ni a `SET_BLIP_SPRITE` después de crearlo.
+### Evitar que la banda sea tratada como un campamento enemigo
 
-La documentación de estilos de RDR3 identifica `BLIP_STYLE_MP_CAMP` con categoría `PROPERTY`, color `COLOR_POSSE_ALLY` y sprite `BLIP_CAMP`:
+La extensión marca como entidades propias de enRAGE los handles exactos de los miembros conocidos. También evita que los registros de \`player_faction\` o el \`CampSite\` propio se asignen o revelen como un campamento enemigo.
 
-- [femga/rdr3_discoveries — Blip Styles, sección BLIP_STYLE_MP_CAMP](https://github.com/femga/rdr3_discoveries/blob/master/useful_info_from_rpfs/blip_styles/README.md#L980-L991).
-- El mismo recurso describe `BLIP_STYLE_CAMP` como estilo de campamento bajo `PROPERTY`, pero con el sprite `BLIP_REGION_CARAVAN` ([referencia](https://github.com/femga/rdr3_discoveries/blob/master/useful_info_from_rpfs/blip_styles/README.md#L376-L380)). Se seleccionó `BLIP_STYLE_MP_CAMP` por su icono específico de campamento.
+Esto incluye bloquear las rutas nativas de aparición/revelación de campamentos para los miembros propios y limpiar referencias obsoletas a campamentos hostiles creados por escaneos anteriores cerca del sitio de la banda. La limpieza se limita a los datos erróneos de la propia facción; los campamentos válidos de otras zonas y las relaciones o guerras con facciones externas siguen perteneciendo a los sistemas de enRAGE.
 
-## Fundación y viaje al campamento
+## Persistencia y recuperación
 
-1. El fundador inicial ejecuta `WORLD_HUMAN_SIT_GUITAR`.
-2. La creación solicita primero el nombre de la banda y después permite elegir una ubicación mediante un menú con nombres.
-3. Las opciones son Cumberland Forest, Big Valley, Scarlett Meadows, Tall Trees, Roanoke Ridge, Rio Bravo y Grizzlies East. No hay una opción de ubicación actual, por lo que Beecher's Hope no aparece en la lista.
-4. Al confirmar, hay un fundido a negro. Si enRAGE acepta el sitio, se registra el campamento y el jugador se teletransporta a sus coordenadas; luego vuelve la imagen.
-5. La banda recibe una primera contribución de 10 puntos de control de territorio en el distrito del campamento. El indicador se guarda para no aplicarla repetidamente.
+La extensión guarda sus datos en:
 
-## Líder, roster y economía
+\`\`\`text
+scripts/
+└── EnRAGEPlayerFactionExtension/
+    ├── PlayerFaction.json
+    └── extension.log
+\`\`\`
 
-La banda utiliza el personaje activo de la historia como líder (`vdl_arthur` o `vdl_john`) y su página nativa del roster. No crea un NPC falso como líder.
+\`PlayerFaction.json\` conserva, entre otros datos:
 
-Hombres, suministros y tesorería se inicializan en cero y luego se sincronizan con los mapas nativos de enRAGE. Los valores que muestra el menú son lecturas reflejadas, no un inventario económico separado.
+- Estado de fundación, nombre e identificadores.
+- Nombre visible del líder.
+- ID, región y coordenadas del campamento.
+- Ajustes de facción y etiquetas personalizadas de los rangos.
+- Estado de inicialización de recursos, contabilidad de fuerza y apoyo territorial.
+- Etapa visual de prestigio y datos auxiliares de recuperación.
 
-## Instalación
+El archivo \`camps.json\` pertenece al sistema de campamentos de enRAGE y también debe conservarse. Si enRAGE carga ese archivo antes de registrar \`player_faction\` y descarta la fila por no conocer aún la facción, la extensión puede reconstruir el \`CampSite\` usando el ID y las coordenadas guardadas en \`PlayerFaction.json\`.
 
-1. Compilá con Visual Studio 2022 o MSBuild, el targeting pack de .NET Framework 4.8 y el `ScriptHookRDRNetAPI.dll` de tu instalación.
-2. En Developer PowerShell ejecutá:
+### Qué ocurre al recargar scripts
 
-   ```powershell
-   .\build.ps1 -RDR2GameDir "D:\Red Dead Redemption 2"
-   ```
+- Se limpian los prompts y marcadores nativos antiguos antes de recrearlos.
+- Se desinstalan los hooks Harmony pertenecientes a esta extensión y se vuelven a instalar al reconectar con enRAGE.
+- La extensión vuelve a registrar la facción y busca su \`CampSite\`.
+- Cuando el sitio está restaurado, vuelve a crear el marcador del campamento.
+- Al acercarse a menos de 140 metros, y cuando la colisión está lista, restaura los objetos físicos del \`CampKit\`.
+- Se intenta recuperar el administrador existente y se reconstruye la asociación de miembros con Companion.
 
-3. Copiá `EnRAGEPlayerFactionExtension.dll` y `0Harmony.dll` desde `bin\Release\net48` a la carpeta `scripts`.
-4. Conservá `scripts\EnRAGEPlayerFactionExtension\PlayerFaction.json`; contiene el ID y las coordenadas de la banda, los ajustes, nombres de rango y el handle temporal del administrador.
-5. Dejá los valores de la Companion Extension así:
+Los handles de NPC solo son referencias temporales válidas durante el mismo proceso del juego. Al iniciar un proceso nuevo de RDR2 se descartan esos handles para evitar enlazar por error una entidad distinta; los IDs persistentes del roster no se descartan.
 
-   ```ini
+**Hacé copias de seguridad de \`PlayerFaction.json\` y del \`camps.json\` de enRAGE antes de probar cambios importantes o versiones nuevas.**
+
+## Configuración
+
+Al iniciar, la extensión crea \`scripts/EnRAGEPlayerFactionExtension.ini\` si todavía no existe. También se distribuye \`EnRAGEPlayerFactionExtension.ini.example\` como plantilla.
+
+| Clave | Valor predeterminado | Función |
+|---|---:|---|
+| \`FounderX\` | \`-1641.797\` | Coordenada X del fundador. |
+| \`FounderY\` | \`-1399.678\` | Coordenada Y del fundador. |
+| \`FounderZ\` | \`82.804\` | Coordenada Z del fundador. |
+| \`FounderHeading\` | \`90.0\` | Orientación inicial del fundador. |
+| \`FounderModel\` | \`U_M_M_Rwfrancher_01\` | Modelo del fundador y del administrador del campamento. |
+| \`SpawnDistance\` | \`300.0\` | Distancia máxima a la que se crea el fundador; se limita al intervalo 300–600. |
+| \`InteractionDistance\` | \`3.0\` | Distancia configurable para la interacción del fundador; se limita al intervalo 1,5–5. |
+| \`FounderPrompt\` | \`Fundar una banda\` | Texto del prompt del fundador. |
+
+Los IDs \`RecruitGangId\` y \`RecruitRosterId\` no pertenecen a este INI. Se configuran en \`EnRAGECompanionsExtension.ini\` y deben mantenerse como \`player_faction\`.
+
+## Instalación y compilación
+
+### Requisitos
+
+- Red Dead Redemption 2.
+- enRAGE instalado y funcionando.
+- ScriptHookRDR2DotNet V2 y el \`ScriptHookRDRNetAPI.dll\` correspondiente a esa instalación.
+- Visual Studio 2022 o MSBuild, con el targeting pack de .NET Framework 4.8, para compilar.
+- EnRAGECompanionsExtension para la integración de reclutamiento, seguimiento y recuperación completa del roster físico.
+
+### Compilar
+
+Desde Developer PowerShell de Visual Studio, en la carpeta del repositorio:
+
+\`\`\`powershell
+.\build.ps1 -RDR2GameDir "D:\Red Dead Redemption 2"
+\`\`\`
+
+El proyecto apunta a .NET Framework 4.8 y x64. El script comprueba que exista \`ScriptHookRDRNetAPI.dll\` en el directorio del juego y ejecuta Restore/Build con MSBuild.
+
+### Instalar
+
+1. Copiá \`EnRAGEPlayerFactionExtension.dll\` y \`0Harmony.dll\` desde \`bin\Release\net48\` a la carpeta \`scripts\` del juego.
+2. Copiá \`EnRAGEPlayerFactionExtension.ini.example\` como \`EnRAGEPlayerFactionExtension.ini\` si querés definir la posición/modelo del fundador antes del primer inicio. Si no lo hacés, la extensión crea el INI con los valores predeterminados.
+3. En \`EnRAGECompanionsExtension.ini\`, dejá:
+
+   \`\`\`ini
    RecruitGangId=player_faction
    RecruitRosterId=player_faction
-   ```
+   \`\`\`
 
-El proyecto no referencia `NemesisMod.dll` al compilar. Se conecta a enRAGE mediante Reflection y Harmony y puede convivir con `EnRAGECompanionsExtension`.
+4. Conservá \`scripts/EnRAGEPlayerFactionExtension/PlayerFaction.json\` y el archivo de campamentos de enRAGE. No borres esos datos al actualizar la DLL si querés mantener tu banda y su ubicación.
 
-## Datos guardados y copias de seguridad
+El proyecto no referencia \`NemesisMod.dll\` durante la compilación. La conexión con enRAGE y sus métodos internos se realiza en ejecución mediante Reflection y Harmony.
 
-`PlayerFaction.json` se guarda en `scripts\EnRAGEPlayerFactionExtension\`. Incluye el estado de la banda, alias visual del líder, coordenadas del campamento, balances reflejados, progreso de territorio, nombres de rangos y ajustes configurables. Hacé una copia de seguridad de ese archivo y de `camps.json` antes de probar.
+## Registro y diagnóstico
 
-## Verificación y límites
+El registro se guarda en:
 
-Este paquete contiene código fuente, no una DLL compilada. En este entorno no están disponibles MSBuild, el compilador C# ni el `ScriptHookRDRNetAPI.dll` de tu instalación. Se comprueban la estructura del ZIP, los delimitadores del código y el archivo de proyecto, pero todavía hacen falta la compilación local y una prueba dentro del juego.
+\`\`\`text
+scripts/EnRAGEPlayerFactionExtension/extension.log
+\`\`\`
+
+Se registran, entre otros eventos, la conexión con enRAGE/Companion, la instalación de hooks, el registro de la facción, la restauración del campamento, la recuperación de miembros, las tareas de escenarios y los errores de sincronización.
+
+Ante un problema:
+
+1. Comprobá que enRAGE y ScriptHook estén cargados correctamente.
+2. Confirmá que los IDs de Companion sean exactamente \`player_faction\`.
+3. Revisá que \`PlayerFaction.json\` y el archivo de campamentos de enRAGE existan y sean válidos.
+4. Revisá las últimas líneas de \`extension.log\` y buscá mensajes de conexión, restauración o integración pendientes.
+
+## Límites conocidos
+
+- Los cinco rangos y sus umbrales siguen siendo los nativos de enRAGE; solo se pueden cambiar sus nombres visibles.
+- Las guerras, rivalidades, eventos de banda y respuestas nativas a disparos siguen dependiendo de las condiciones y probabilidades de enRAGE. Activar una opción no fuerza un evento.
+- La vida de campamento requiere una asociación inequívoca entre el registro del roster y el ped. No se elige un NPC por coincidencia de modelo.
+- La materialización de miembros persistidos requiere los datos del roster y la integración de Companion; solo se realiza cuando el campamento está cargado.
+- Las conversaciones ambientales dependen de las líneas y bancos de voz disponibles para cada ped.
+- La configuración física del campamento se reconstruye cuando el jugador se acerca y la colisión del terreno está cargada.
 
 ---
 
 ## Historial resumido
 
-- **v0.3.6:** mejora visual por PRESTIGIO en cinco etapas; interacción social de campamento para saludar/provocar sin hostilidad; charlas ambientales, más escenarios y defensa reactiva; limpieza de campamentos LiveCamp falsos alrededor del sitio de `player_faction`.
-- **v0.1.x:** fundador, registro de la facción y líder nativo.
-- **v0.2.0–v0.2.1:** alias visual, campamento nativo exterior, selector y sincronización de recursos.
-- **v0.2.2–v0.2.4:** selector con nombres, restauración de territorio y correcciones de compatibilidad nativa.
-- **v0.2.5–v0.2.6:** restauración de CampSite/CampKit, blip PROPERTY y creación con fundido a negro.
-- **v0.3.0:** NPC administrador de guitarra, menú de ajustes de facción y nombres de rangos; IDs fijos `player_faction`.
-- **v0.3.3:** los miembros existentes que no siguen al jugador vuelven al campamento; escenarios cercanos a objetos con reserva de puntos y escenarios alternativos aleatorios de pie/sentado.
-- **v0.3.5:** recuperación de registros Companion entre `Roster` y `StoryRoster`; materialización de miembros ausentes usando la identidad persistente del roster; baseline de hombres para que solo los reclutas posteriores sumen fuerza; fallback de instancia durante recargas; comprobación de flags nativos de la facción.
-- **v0.3.4:** limpieza/reinstalación de prompts y hooks al recargar; barra PRESTIGIO; acciones de ascenso/degradación; integración de «Hacia ti» desde `RegardOfRecord` según el rango y migración de registros Companion ya guardados a `player_faction`.
-
-
-## v0.3.1 corrections
-
-- Cumberland Forest camp coordinate no longer overlaps the O'Driscoll site at `gang_odriscollboys_cml005` (`497.3, 1498.1`), and is outside enRAGE's 450 m Fort Wallace exclusion radius. The extension also reports which native rejection rule was detected (fort perimeter, same-faction camp within 400 m, six-camp limit, or an unclassified native rejection).
-- Founder and camp-administrator prompts use the actual `_UI_PROMPT_GET_GROUP_ID_FOR_TARGET_ENTITY` group for the target ped and check hold-mode completion directly by native hash, following Companion's hold-prompt flow. The manager interaction also has a direct context-control fallback.
-- Added a reflection bridge to the Companion extension's released-ped set and per-handle roster cache. When a living `player_faction` roster NPC is dismissed, the extension orders that exact existing ped handle to navigate back to camp and start a camp idle scenario after arrival. It does not spawn a replacement. Companion's pending ambient-wander timer is cleared for that same handle so it cannot immediately overwrite the camp-return task. If the entity has streamed out or died, this extension will not create a clone to replace it.
-
-La integración inicial de v0.3.1 usaba `AmbientReleasedRecruitPeds`; desde v0.3.3 el puente consulta `RosterRecordsByPedHandle` y `_latestMainInstance._comps` para cubrir también miembros vivos que ya no están en la lista activa de seguimiento. `AmbientReleasedWanderAt` se usa de forma opcional para evitar que Companion sobrescriba la ruta al campamento. Si cambian esas estructuras internas en otra versión de Companion, la extensión registra el problema y omite la integración en lugar de inferir la identidad por el modelo.
-
-
-## v0.3.2 corrections
-
-- Camp and founder blip cleanup is deferred to the first game tick and retries every 250 ms until RDR2 confirms the saved native handles no longer exist. The extension keeps the stored handles while cleanup is pending rather than clearing them prematurely.
-- Removed unconditional camp-blip creation from the beginning of the founded-faction tick. The camp marker is recreated only after `FindPlayerCampSite` confirms that enRAGE has loaded the native camp; successful camp creation and explicit rediscovery paths also restore the marker.
-- This prevents the marker from being immediately recreated from saved coordinates during script reload, before the native camp has loaded.
-
-
-## v0.3.3 — vida de campamento para los miembros que no siguen al jugador
-
-- Los miembros vivos de `player_faction` que Companion tiene asociados a un handle real, pero que ya no aparecen en su lista activa de seguidores, vuelven caminando al área central del campamento. Los que sí siguen al jugador se excluyen inmediatamente.
-- En v0.3.3 se reutilizaba únicamente el ped exacto de `RosterRecordsByPedHandle`. Desde v0.3.5 los registros guardados sin entidad viva también pueden materializarse en el campamento bajo el mismo `RosterId`; no se selecciona otro NPC por modelo.
-- Al llegar, cada NPC intenta usar un escenario del mundo próximo a los puntos que enRAGE registró para los objetos de `CampKit`. La extensión reserva los puntos seleccionados y también evita elegir otro punto si un NPC administrado está usando un escenario muy cerca de él. Así se reduce que dos miembros intenten ocupar el mismo asiento/punto.
-- Para escenarios de campamento se llama al nativo de RDR2 `_TASK_USE_NEAREST_SCENARIO_TO_COORD` (`0x322BFDEA666E2B0E`), con su firma de diez argumentos. No se usa el nativo de seis argumentos de GTA V. Referencia: [RDR2 NativeDB — _TASK_USE_NEAREST_SCENARIO_TO_COORD](https://www.rdr2mods.com/nativedb/index/task/_0x322bfdea666e2b0e/).
-- Si no hay un punto cercano utilizable, o todos los puntos quedan reservados/ocupados, se recorren en orden aleatorio escenarios válidos de pie y sentado: espera de pie, mirada estoica, espera impaciente, sentarse en el suelo, descansar sentado y fumar sentado. Cuando un escenario termina, el NPC vuelve a buscar un punto libre antes de entrar otra vez en la lista aleatoria. Los nombres de escenario se contrastaron con la [lista de escenarios de RDR2](https://www.rdr2mods.com/wiki/pages/list-of-rdr2-scenarios/).
-- La llegada se valida a 3,8 m del destino, coherente con el radio de parada de la orden de navegación; no se marca como llegado a 8 m, lo que podía dejar al NPC en el borde del campamento.
-- El administrador del campamento usa el mismo selector de escenarios del campamento. El fundador inicial conserva su guitarra.
-
-**Límite deliberado:** solo se asignan a la vida de campamento NPCs que Companion puede asociar inequívocamente con un registro `player_faction` y un ped real existente. No se deduce identidad por el modelo, porque podría mover al NPC equivocado o duplicarlo.
+- **v0.3.6:** aspecto del campamento por prestigio en cinco etapas; vida de campamento con escenarios y conversaciones ambientales; defensa reactiva; sincronización de roster y recursos; prevención de falsos campamentos enemigos.
+- **v0.3.5:** recuperación de registros Companion, materialización de miembros faltantes por ID persistente, línea base de fuerza inicial y ajustes nativos de facción.
+- **v0.3.4:** recuperación tras recargar scripts, barra PRESTIGIO, acciones de ascenso/degradación y relación «HACIA TI» por rango.
+- **v0.3.3:** regreso al campamento de los miembros que dejan de seguir al jugador y selector de escenarios con reserva de puntos.
+- **v0.3.0:** administrador del campamento, menú de gestión e identificadores fijos \`player_faction\`.
+- **v0.1.x–v0.2.x:** fundación de la facción, líder nativo, selector de campamento, restauración de \`CampSite\`/\`CampKit\`, marcador y sincronización inicial.
