@@ -116,6 +116,7 @@ namespace EnRAGEPlayerFactionExtension
         private int _pendingRankIndex = -1;
         private List<string> _rankMenuLabels = new List<string>();
         private int _nextReleasedRosterScanAt;
+        private int _nextPlayerFactionProtectionAt;
         private int _nextRosterIntegrationWarningAt;
         private readonly Dictionary<int, CampboundRosterMember> _campboundRosterMembers = new Dictionary<int, CampboundRosterMember>();
 
@@ -240,6 +241,11 @@ namespace EnRAGEPlayerFactionExtension
             // Companion records to the fixed faction once that assembly becomes available.
             _bridge.TryInstallCompanionIntegrationPatches();
             _bridge.NormalizeCompanionPlayerFactionRoster();
+            if (_faction.Founded && _factionRegistered && Game.GameTime >= _nextPlayerFactionProtectionAt)
+            {
+                _nextPlayerFactionProtectionAt = Game.GameTime + 500;
+                MaintainPlayerFactionMemberProtection();
+            }
 
             // Companion's exact handle-to-roster cache is polled for every living player_faction member
             // not currently following. Existing handles are reused; after a game restart, a missing world
@@ -479,6 +485,13 @@ namespace EnRAGEPlayerFactionExtension
         {
             return _faction != null && !string.IsNullOrWhiteSpace(siteId) &&
                    string.Equals(_faction.CampSiteId, siteId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal bool IsCampManagerPed(Ped ped)
+        {
+            if (ped == null || !ped.Exists() || _faction == null) return false;
+            return (_campManager != null && _campManager.Exists() && _campManager.Handle == ped.Handle) ||
+                   (_faction.CampManagerPedHandle != 0 && _faction.CampManagerPedHandle == ped.Handle);
         }
 
         internal bool IsValidCampManagerHandle(Ped ped)
@@ -2019,9 +2032,59 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        private void ApplyPlayerFactionMemberProtection(Ped ped, Ped player)
+        {
+            if (ped == null || !ped.Exists() || ped.IsDead || player == null || !player.Exists()) return;
+            try
+            {
+                // Player-faction members stay selectable for native RDR2 social controls, but cannot
+                // take damage from the player or anyone else. Friendly relationship 0 gives the grey
+                // ally reticle instead of treating the recruit like a hostile target.
+                ENTITY.SET_ENTITY_INVINCIBLE(ped.Handle, true);
+                Function.Call(SetEntityCanBeDamagedHash, new InputArgument[] { ped.Handle, false });
+                uint memberGroup = ped.RelationshipGroup;
+                uint playerGroup = player.RelationshipGroup;
+                World.SetRelationshipBetweenGroups(0, memberGroup, playerGroup);
+                World.SetRelationshipBetweenGroups(0, playerGroup, memberGroup);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Player-faction friendly-fire protection warning (" + ped.Handle + "): " + ex.Message);
+            }
+        }
+
+        private void MaintainPlayerFactionMemberProtection()
+        {
+            Ped player = Game.Player != null ? Game.Player.Character : null;
+            if (player == null || !player.Exists() || player.IsDead || _bridge == null) return;
+
+            try
+            {
+                HashSet<int> handles = _bridge.GetKnownPlayerFactionPedHandles(_faction);
+                foreach (CampboundRosterMember member in _campboundRosterMembers.Values)
+                    if (member != null && member.Handle != 0) handles.Add(member.Handle);
+
+                foreach (int handle in handles)
+                {
+                    if (handle == 0 || handle == _faction.CampManagerPedHandle ||
+                        (_campManager != null && _campManager.Exists() && handle == _campManager.Handle))
+                        continue;
+                    Ped memberPed = null;
+                    try { memberPed = new Ped(handle); } catch { }
+                    if (memberPed == null || !memberPed.Exists() || memberPed.IsDead) continue;
+                    ApplyPlayerFactionMemberProtection(memberPed, player);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Player-faction roster protection scan warning: " + ex.Message);
+            }
+        }
+
         internal void EnsureNativeCampMemberSocialInteraction(Ped ped)
         {
             if (ped == null || !ped.Exists() || ped.IsDead) return;
+            ApplyPlayerFactionMemberProtection(ped, Game.Player != null ? Game.Player.Character : null);
 
             try
             {
@@ -2055,10 +2118,17 @@ namespace EnRAGEPlayerFactionExtension
 
         private void UpdateRosterMemberReturn(CampboundRosterMember member)
         {
+            UpdateRosterMemberReturn(member, true);
+        }
+
+        private void UpdateRosterMemberReturn(CampboundRosterMember member, bool restoreNativeSocialInteraction)
+        {
             if (member == null || member.Ped == null || !member.Ped.Exists() || member.Ped.IsDead) return;
 
-            // Companion/EnRAGE can refresh their recruit profile; reassert native interaction flags.
-            EnsureNativeCampMemberSocialInteraction(member.Ped);
+            // Ordinary roster members retain RDR2's native greet/antagonize selection. The administrator
+            // uses a separate protected path and must never be made targetable by this routine.
+            if (restoreNativeSocialInteraction)
+                EnsureNativeCampMemberSocialInteraction(member.Ped);
 
             if (member.Arrived)
             {
@@ -2688,7 +2758,9 @@ namespace EnRAGEPlayerFactionExtension
 
             // The administrator uses the same unoccupied-object scenario allocator as other roster peds.
             // Guitar is one of the possible ambience scenarios, not a hardcoded permanent task.
-            UpdateRosterMemberReturn(_campManagerIdle);
+            // Do not run the normal roster-member interaction restore for the administrator:
+            // it deliberately re-enables player targeting/social events and races his hard protection.
+            UpdateRosterMemberReturn(_campManagerIdle, false);
             if (Game.GameTime >= _nextCampManagerProtectionAt)
             {
                 _nextCampManagerProtectionAt = Game.GameTime + 500;
