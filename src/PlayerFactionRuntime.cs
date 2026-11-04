@@ -44,8 +44,18 @@ namespace EnRAGEPlayerFactionExtension
         private const string CampSpeechVoice = "";
         private const int ControlFrontendUp = unchecked((int)0x6319DB71);
         private const int ControlFrontendDown = unchecked((int)0x05CA7C52);
+        private const int ControlFrontendLeft = unchecked((int)0xA65EBAB4);
+        private const int ControlFrontendRight = unchecked((int)0xDEB34313);
         private const int ControlFrontendAccept = unchecked((int)0xC7B5340A);
         private const int ControlFrontendCancel = unchecked((int)0x156F7119);
+        private const ulong CreateScriptCameraHash = 0xE72CDBA7F0A02DD6UL;
+        private const ulong SetCameraActiveHash = 0x87295BCA613800C8UL;
+        private const ulong SetCameraCoordinateHash = 0xF9EE7D419EE49DE6UL;
+        private const ulong PointCameraAtEntityHash = 0xFC2867E6074D3A61UL;
+        private const ulong SetCameraFovHash = 0x27666E5988D9D429UL;
+        private const ulong RenderScriptCamerasHash = 0x33281167E4942E4FUL;
+        private const ulong DestroyCameraHash = 0x4E67E0B6D7FD5145UL;
+        private const ulong FreezeEntityPositionHash = 0x7D9EFB7AD6B19754UL;
 
         // RDR2 INPUT_* control hashes. These are disabled only in the founder's immediate vicinity.
         private static readonly int[] ProtectedMeleeControls =
@@ -120,6 +130,28 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextPlayerFactionProtectionAt;
         private int _nextRosterIntegrationWarningAt;
         private readonly Dictionary<int, CampboundRosterMember> _campboundRosterMembers = new Dictionary<int, CampboundRosterMember>();
+        private readonly MemberAppearanceStore _appearanceStore;
+        private readonly Dictionary<string, int> _appearanceAppliedHandles =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _appearanceModelMismatchLogged =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private int _nextAppearanceRestoreAt;
+        private bool _appearanceEditorOpen;
+        private bool _appearanceAssetListOpen;
+        private int _appearanceCategoryIndex;
+        private int _appearanceAssetIndex;
+        private int _appearanceCameraHandle;
+        private int _appearanceFrozenHandle;
+        private float _appearanceViewAngle;
+        private string _appearanceTargetId = string.Empty;
+        private string _appearanceTargetName = string.Empty;
+        private uint _appearanceTargetModelHash;
+        private Ped _appearanceTargetPed;
+        private List<YmtAppearanceAsset> _appearanceAssets = new List<YmtAppearanceAsset>();
+        private List<YmtAppearanceAsset> _appearanceFilteredAssets = new List<YmtAppearanceAsset>();
+        private string _appearanceCatalogDirectory = string.Empty;
+        private int _appearanceCatalogFilesScanned;
+        private bool _appearanceCatalogLoaded;
 
         private sealed class CampboundRosterMember
         {
@@ -197,6 +229,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             _config = ExtensionConfig.Load();
             _faction = PlayerFactionData.Load();
+            _appearanceStore = MemberAppearanceStore.Load();
 
             // Ped handles survive a ScriptHook script reload in the same game process, but
             // must never be trusted after a complete game restart (RDR2 can reuse old handles).
@@ -236,7 +269,17 @@ namespace EnRAGEPlayerFactionExtension
                 _bridge.TryAttach();
             }
             if (!_bridge.IsAvailable)
+            {
+                if (_appearanceEditorOpen) CloseAppearanceEditor(false);
                 return;
+            }
+
+            // A profile editor owns the roster screen and its controls until it closes.
+            if (_appearanceEditorOpen)
+            {
+                UpdateAppearanceEditor();
+                return;
+            }
 
             // Companion may load after enRAGE/the extension. Retry both hooks and migrate exact cached
             // Companion records to the fixed faction once that assembly becomes available.
@@ -256,6 +299,8 @@ namespace EnRAGEPlayerFactionExtension
                 _nextReleasedRosterScanAt = Game.GameTime + 1000;
                 MaintainReleasedRosterMembersReturningToCamp();
             }
+
+            MaintainSavedMemberAppearances();
 
             // Keyboard updates are processed before the founded/unfounded branches so
             // renaming the leader works while the faction is already active.
@@ -417,8 +462,9 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void OnScriptAborted()
         {
-            // ScriptHook can reload scripts without restarting the game. Native prompts and
-            // Harmony patches outlive this managed Script instance unless explicitly released.
+            // ScriptHook can reload scripts without restarting the game. Release the temporary
+            // appearance camera/freeze before removing Harmony hooks so controls return to gameplay.
+            CloseAppearanceEditor(false);
             _factionMenuOpen = false;
             _keyboardOpen = false;
             _campSelectionActive = false;
@@ -1115,6 +1161,461 @@ namespace EnRAGEPlayerFactionExtension
                 ? "ELIGE LA NUEVA UBICACIÓN DEL CAMPAMENTO. Usa arriba/abajo y confirma con aceptar."
                 : "FUNDAR BANDA · PASO 2 DE 2: ELIGE LA UBICACIÓN DEL CAMPAMENTO.");
             Log.Write(logMessage + " (on-screen camp creation menu)");
+        }
+
+        internal bool IsAppearanceEditorOpen
+        {
+            get { return _appearanceEditorOpen; }
+        }
+
+        internal bool OpenAppearanceEditor(object record)
+        {
+            if (record == null || !_bridge.IsAvailable)
+            {
+                Notify("No se pudo abrir el editor de apariencia: enRAGE todavía no está listo.");
+                return false;
+            }
+
+            string rosterId = Convert.ToString(ReadRecordMember(record, "Id"));
+            string displayName = Convert.ToString(ReadRecordMember(record, "Name"));
+            if (string.IsNullOrWhiteSpace(rosterId))
+            {
+                Notify("No se encontró el ID persistente del miembro.");
+                return false;
+            }
+
+            Ped target;
+            if (!_bridge.TryGetLivePlayerFactionPed(rosterId, _faction, out target) ||
+                target == null || !target.Exists() || target.IsDead)
+            {
+                Notify("Este miembro no tiene un NPC vivo disponible ahora. Acercate a él o espera a que enRAGE lo vuelva a crear.");
+                Log.Write("Appearance editor open rejected; no live ped was associated with roster ID " + rosterId + ".");
+                return false;
+            }
+
+            Ped player = Game.Player.Character;
+            if (player == null || !player.Exists() || player.Position.DistanceTo(target.Position) > 85f)
+            {
+                Notify("Acercate a " + (string.IsNullOrWhiteSpace(displayName) ? "este miembro" : displayName) +
+                    " para abrir su vista previa.");
+                return false;
+            }
+
+            if (!ResolveUiDrawMethods())
+            {
+                Notify("No se pudo iniciar el editor porque el dibujado de la interfaz de enRAGE no está disponible.");
+                return false;
+            }
+
+            if (_appearanceEditorOpen)
+                CloseAppearanceEditor(false);
+
+            _appearanceTargetId = rosterId;
+            _appearanceTargetName = string.IsNullOrWhiteSpace(displayName) ? rosterId : displayName;
+            _appearanceTargetPed = target;
+            _appearanceTargetModelHash = unchecked((uint)target.Model.Hash);
+            _appearanceCategoryIndex = 0;
+            _appearanceAssetIndex = 0;
+            _appearanceAssetListOpen = false;
+            _appearanceViewAngle = 0f;
+            RefreshAppearanceCatalog();
+
+            MemberAppearanceProfile savedProfile;
+            if (_appearanceStore.TryGetProfile(rosterId, out savedProfile) &&
+                savedProfile != null && savedProfile.Components != null &&
+                savedProfile.Components.Count > 0 && savedProfile.ModelHash == _appearanceTargetModelHash)
+            {
+                string restoreError;
+                if (MetaPedAppearanceAdapter.ApplyProfile(target, savedProfile, out restoreError))
+                    _appearanceAppliedHandles[rosterId] = target.Handle;
+                else
+                    Log.Write("Existing appearance profile could not be applied before opening editor for " + rosterId + ": " + restoreError);
+            }
+
+            try
+            {
+                Function.Call(FreezeEntityPositionHash, new InputArgument[] { target.Handle, true });
+                _appearanceFrozenHandle = target.Handle;
+                _appearanceCameraHandle = Function.Call<int>(CreateScriptCameraHash,
+                    new InputArgument[] { "DEFAULT_SCRIPTED_CAMERA", true });
+                if (_appearanceCameraHandle != 0)
+                {
+                    Function.Call(SetCameraActiveHash, new InputArgument[] { _appearanceCameraHandle, true });
+                    Function.Call(SetCameraFovHash, new InputArgument[] { _appearanceCameraHandle, 44.0f });
+                    UpdateAppearanceCamera();
+                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { true, true, 350, true, true, 0 });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Appearance preview camera initialization warning: " + ex);
+                _appearanceCameraHandle = 0;
+            }
+
+            _appearanceEditorOpen = true;
+            Notify("EDITOR DE APARIENCIA: elegir una pieza la aplica al NPC y la guarda al instante.");
+            Log.Write("Appearance editor opened for " + _appearanceTargetName + " (" + _appearanceTargetId +
+                "), model=0x" + _appearanceTargetModelHash.ToString("X8") + ", catalog assets=" + _appearanceAssets.Count + ".");
+            return true;
+        }
+
+        private void RefreshAppearanceCatalog()
+        {
+            _appearanceAssets = YmtAppearanceCatalog.LoadSavedAssets(
+                out _appearanceCatalogDirectory, out _appearanceCatalogFilesScanned);
+            _appearanceCatalogLoaded = true;
+            _appearanceFilteredAssets = new List<YmtAppearanceAsset>();
+        }
+
+        private void UpdateAppearanceEditor()
+        {
+            if (!_appearanceEditorOpen) return;
+            if (_appearanceTargetPed == null || !_appearanceTargetPed.Exists() || _appearanceTargetPed.IsDead)
+            {
+                CloseAppearanceEditor(false);
+                Notify("El NPC ya no está disponible. Los cambios elegidos antes de salir siguen guardados.");
+                return;
+            }
+
+            UpdateAppearanceCamera();
+            if (JustPressed(ControlFrontendCancel))
+            {
+                if (_appearanceAssetListOpen)
+                {
+                    _appearanceAssetListOpen = false;
+                    _appearanceAssetIndex = 0;
+                }
+                else
+                {
+                    CloseAppearanceEditor(true);
+                }
+                return;
+            }
+
+            if (JustPressed(ControlFrontendLeft))
+            {
+                _appearanceViewAngle -= 20f;
+                if (_appearanceViewAngle < 0f) _appearanceViewAngle += 360f;
+                UpdateAppearanceCamera();
+                return;
+            }
+            if (JustPressed(ControlFrontendRight))
+            {
+                _appearanceViewAngle = (_appearanceViewAngle + 20f) % 360f;
+                UpdateAppearanceCamera();
+                return;
+            }
+
+            if (JustPressed(ControlFrontendUp))
+            {
+                if (_appearanceAssetListOpen)
+                {
+                    if (_appearanceFilteredAssets.Count > 0)
+                        _appearanceAssetIndex = (_appearanceAssetIndex + _appearanceFilteredAssets.Count - 1) %
+                            _appearanceFilteredAssets.Count;
+                }
+                else
+                {
+                    int count = YmtAppearanceCatalog.Categories.Count + 2;
+                    _appearanceCategoryIndex = (_appearanceCategoryIndex + count - 1) % count;
+                }
+                return;
+            }
+
+            if (JustPressed(ControlFrontendDown))
+            {
+                if (_appearanceAssetListOpen)
+                {
+                    if (_appearanceFilteredAssets.Count > 0)
+                        _appearanceAssetIndex = (_appearanceAssetIndex + 1) % _appearanceFilteredAssets.Count;
+                }
+                else
+                {
+                    int count = YmtAppearanceCatalog.Categories.Count + 2;
+                    _appearanceCategoryIndex = (_appearanceCategoryIndex + 1) % count;
+                }
+                return;
+            }
+
+            if (!JustPressed(ControlFrontendAccept)) return;
+            if (_appearanceAssetListOpen)
+            {
+                if (_appearanceFilteredAssets.Count > 0 &&
+                    _appearanceAssetIndex >= 0 && _appearanceAssetIndex < _appearanceFilteredAssets.Count)
+                    ApplySelectedAppearanceAsset();
+                return;
+            }
+
+            int categoryCount = YmtAppearanceCatalog.Categories.Count;
+            if (_appearanceCategoryIndex < categoryCount)
+            {
+                MetaPedCategory category = YmtAppearanceCatalog.Categories[_appearanceCategoryIndex];
+                _appearanceFilteredAssets = _appearanceAssets
+                    .Where(x => string.Equals(x.CategoryKey, category.Key, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.SourceOutfit, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                _appearanceAssetIndex = 0;
+                _appearanceAssetListOpen = true;
+                if (_appearanceFilteredAssets.Count == 0)
+                    Notify("No hay componentes de " + category.Label + " en el catálogo. Exportá conjuntos XML desde YMT-Trainer y recargá el catálogo.");
+                return;
+            }
+
+            if (_appearanceCategoryIndex == categoryCount)
+            {
+                RefreshAppearanceCatalog();
+                _appearanceCategoryIndex = 0;
+                Notify("Catálogo actualizado: " + _appearanceAssets.Count + " componentes desde " +
+                    _appearanceCatalogFilesScanned + " conjunto(s) YMT.");
+                return;
+            }
+
+            CloseAppearanceEditor(true);
+        }
+
+        private void ApplySelectedAppearanceAsset()
+        {
+            YmtAppearanceAsset asset = _appearanceFilteredAssets[_appearanceAssetIndex];
+            if (asset == null || _appearanceTargetPed == null || !_appearanceTargetPed.Exists()) return;
+
+            MemberAppearanceComponent component = asset.ToStoredComponent();
+            string error;
+            if (!MetaPedAppearanceAdapter.ApplyComponent(_appearanceTargetPed, component, out error))
+            {
+                Notify("No se pudo aplicar " + asset.DisplayName + ". " + (string.IsNullOrWhiteSpace(error) ? "Componente no compatible." : error));
+                return;
+            }
+
+            try
+            {
+                uint modelHash = unchecked((uint)_appearanceTargetPed.Model.Hash);
+                _appearanceStore.SaveComponent(_appearanceTargetId, _appearanceTargetName, modelHash, component);
+                _appearanceTargetModelHash = modelHash;
+                _appearanceAppliedHandles[_appearanceTargetId] = _appearanceTargetPed.Handle;
+                _appearanceModelMismatchLogged.Remove(_appearanceTargetId);
+                Notify(asset.CategoryLabel + " actualizado para " + _appearanceTargetName + ". Apariencia guardada.");
+                Log.Write("Appearance component saved for roster ID " + _appearanceTargetId + ": category=" +
+                    asset.CategoryKey + ", drawable=" + asset.Drawable + ", source=" + asset.SourceOutfit + ".");
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Appearance component was applied but could not be saved for " + _appearanceTargetId + ": " + ex);
+                Notify("La pieza se aplicó, pero no se pudo guardar. Revisa extension.log.");
+            }
+        }
+
+        private void MaintainSavedMemberAppearances()
+        {
+            if (!_faction.Founded || _appearanceStore == null || Game.GameTime < _nextAppearanceRestoreAt)
+                return;
+            _nextAppearanceRestoreAt = Game.GameTime + 1500;
+
+            foreach (MemberAppearanceProfile profile in _appearanceStore.Profiles.ToList())
+            {
+                if (profile == null || string.IsNullOrWhiteSpace(profile.MemberId) ||
+                    profile.Components == null || profile.Components.Count == 0)
+                    continue;
+
+                Ped ped;
+                if (!_bridge.TryGetLivePlayerFactionPed(profile.MemberId, _faction, out ped) ||
+                    ped == null || !ped.Exists() || ped.IsDead)
+                {
+                    _appearanceAppliedHandles.Remove(profile.MemberId);
+                    continue;
+                }
+
+                int lastHandle;
+                if (_appearanceAppliedHandles.TryGetValue(profile.MemberId, out lastHandle) && lastHandle == ped.Handle)
+                    continue;
+
+                uint liveModelHash = unchecked((uint)ped.Model.Hash);
+                if (profile.ModelHash != 0U && liveModelHash != profile.ModelHash)
+                {
+                    if (_appearanceModelMismatchLogged.Add(profile.MemberId))
+                        Log.Write("Saved appearance skipped for " + profile.MemberId + " because its model hash no longer matches. Saved=0x" +
+                            profile.ModelHash.ToString("X8") + ", live=0x" + liveModelHash.ToString("X8") + ".");
+                    continue;
+                }
+
+                string error;
+                if (MetaPedAppearanceAdapter.ApplyProfile(ped, profile, out error))
+                {
+                    _appearanceAppliedHandles[profile.MemberId] = ped.Handle;
+                    _appearanceModelMismatchLogged.Remove(profile.MemberId);
+                    Log.Write("Reapplied " + profile.Components.Count + " saved appearance component(s) to roster ID " +
+                        profile.MemberId + " on ped handle " + ped.Handle + ".");
+                }
+                else
+                {
+                    Log.Write("Saved appearance pending for roster ID " + profile.MemberId + ": " + error);
+                }
+            }
+        }
+
+        private void UpdateAppearanceCamera()
+        {
+            if (_appearanceCameraHandle == 0 || _appearanceTargetPed == null || !_appearanceTargetPed.Exists())
+                return;
+
+            try
+            {
+                Vector3 position = _appearanceTargetPed.Position;
+                float radians = (_appearanceTargetPed.Heading + _appearanceViewAngle) * (float)Math.PI / 180f;
+                float distance = 3.0f;
+                float x = position.X + (float)Math.Sin(radians) * distance;
+                float y = position.Y + (float)Math.Cos(radians) * distance;
+                float z = position.Z + 1.15f;
+                Function.Call(SetCameraCoordinateHash, new InputArgument[] { _appearanceCameraHandle, x, y, z });
+                Function.Call(PointCameraAtEntityHash, new InputArgument[]
+                {
+                    _appearanceCameraHandle, _appearanceTargetPed.Handle, 0.0f, 0.0f, 0.75f, true
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Appearance preview camera update warning: " + ex.Message);
+            }
+        }
+
+        internal void DrawAppearanceEditor()
+        {
+            if (!_appearanceEditorOpen || !ResolveUiDrawMethods()) return;
+
+            // The game camera is focused on the real member on the left; the right-hand panel
+            // stays visually close to enRAGE's existing dark/gold roster UI.
+            DrawMenuRect(0.025f, 0.055f, 0.47f, 0.125f, 14, 13, 12, 178);
+            DrawMenuText("MIEMBRO DE LA BANDA", 0.045f, 0.075f, 0.20f, 190, 174, 145, 255);
+            DrawMenuText(_appearanceTargetName, 0.045f, 0.105f, 0.285f, 245, 235, 214, 255);
+            DrawMenuText("ROSTER: " + _appearanceTargetId, 0.045f, 0.145f, 0.145f, 200, 193, 178, 255);
+
+            DrawMenuRect(0.545f, 0.045f, 0.43f, 0.91f, 14, 13, 12, 238);
+            DrawMenuRect(0.545f, 0.045f, 0.43f, 0.004f, 187, 145, 82, 255);
+            DrawMenuText("MODIFICAR APARIENCIA", 0.57f, 0.073f, 0.265f, 245, 235, 214, 255);
+            DrawMenuText("COMPONENTES METAPED", 0.57f, 0.113f, 0.17f, 190, 174, 145, 255);
+            DrawMenuRect(0.57f, 0.151f, 0.38f, 0.0015f, 105, 91, 69, 210);
+
+            int savedCount = _appearanceStore.ComponentCount(_appearanceTargetId);
+            DrawMenuText("PIEZAS GUARDADAS: " + savedCount, 0.57f, 0.166f, 0.15f, 210, 205, 192, 255);
+
+            if (_appearanceAssetListOpen)
+            {
+                MetaPedCategory category = YmtAppearanceCatalog.GetCategory(
+                    _appearanceCategoryIndex >= 0 && _appearanceCategoryIndex < YmtAppearanceCatalog.Categories.Count
+                        ? YmtAppearanceCatalog.Categories[_appearanceCategoryIndex].Key : string.Empty);
+                DrawMenuText(category == null ? "COMPONENTES" : category.Label.ToUpperInvariant(),
+                    0.57f, 0.198f, 0.205f, 232, 226, 211, 255);
+
+                if (_appearanceFilteredAssets.Count == 0)
+                {
+                    DrawMenuRect(0.57f, 0.245f, 0.38f, 0.205f, 25, 23, 21, 230);
+                    DrawMenuText("NO HAY PIEZAS CATALOGADAS", 0.59f, 0.27f, 0.165f, 245, 235, 214, 255);
+                    DrawMenuText("Exporta un conjunto XML con", 0.59f, 0.31f, 0.155f, 210, 205, 192, 255);
+                    DrawMenuText("YMT-Trainer y guardalo en", 0.59f, 0.337f, 0.155f, 210, 205, 192, 255);
+                    DrawMenuText("YMTTFiles/SavedYMTs.", 0.59f, 0.364f, 0.155f, 210, 205, 192, 255);
+                    DrawMenuText("Luego vuelve y recarga el catalogo.", 0.59f, 0.404f, 0.145f, 190, 174, 145, 255);
+                }
+                else
+                {
+                    int visible = 13;
+                    int start = Math.Max(0, Math.Min(_appearanceAssetIndex - 5, _appearanceFilteredAssets.Count - visible));
+                    int end = Math.Min(_appearanceFilteredAssets.Count, start + visible);
+                    for (int i = start; i < end; i++)
+                    {
+                        float y = 0.235f + (i - start) * 0.041f;
+                        bool active = i == _appearanceAssetIndex;
+                        DrawMenuRect(0.57f, y, 0.38f, 0.035f,
+                            active ? 63 : 30, active ? 48 : 28, active ? 29 : 25, active ? 245 : 220);
+                        if (active) DrawMenuRect(0.57f, y, 0.003f, 0.035f, 205, 166, 105, 255);
+                        string label = (active ? "> " : "  ") + _appearanceFilteredAssets[i].DisplayName;
+                        DrawMenuText(label, 0.585f, y + 0.008f, 0.153f,
+                            active ? 250 : 205, active ? 235 : 199, active ? 208 : 187, 255);
+                        DrawMenuText(_appearanceFilteredAssets[i].SourceOutfit ?? string.Empty,
+                            0.805f, y + 0.009f, 0.115f, 164, 157, 141, 255);
+                    }
+                }
+            }
+            else
+            {
+                DrawMenuText("CATEGORIAS", 0.57f, 0.198f, 0.205f, 232, 226, 211, 255);
+                int itemCount = YmtAppearanceCatalog.Categories.Count + 2;
+                int visible = 13;
+                int start = Math.Max(0, Math.Min(_appearanceCategoryIndex - 5, itemCount - visible));
+                int end = Math.Min(itemCount, start + visible);
+                for (int i = start; i < end; i++)
+                {
+                    float y = 0.235f + (i - start) * 0.041f;
+                    bool active = i == _appearanceCategoryIndex;
+                    string label;
+                    if (i < YmtAppearanceCatalog.Categories.Count)
+                    {
+                        MetaPedCategory category = YmtAppearanceCatalog.Categories[i];
+                        int count = _appearanceAssets.Count(x => string.Equals(x.CategoryKey, category.Key, StringComparison.OrdinalIgnoreCase));
+                        label = category.Label + "  (" + count + ")";
+                    }
+                    else if (i == YmtAppearanceCatalog.Categories.Count)
+                        label = "Recargar catálogo";
+                    else
+                        label = "Cerrar editor";
+
+                    DrawMenuRect(0.57f, y, 0.38f, 0.035f,
+                        active ? 63 : 30, active ? 48 : 28, active ? 29 : 25, active ? 245 : 220);
+                    if (active) DrawMenuRect(0.57f, y, 0.003f, 0.035f, 205, 166, 105, 255);
+                    DrawMenuText((active ? "> " : "  ") + label, 0.585f, y + 0.008f, 0.158f,
+                        active ? 250 : 205, active ? 235 : 199, active ? 208 : 187, 255);
+                }
+                DrawMenuRect(0.57f, 0.79f, 0.38f, 0.032f, 25, 23, 21, 230);
+                DrawMenuText(_appearanceCatalogFilesScanned + " conjuntos YMT · " + _appearanceAssets.Count + " componentes",
+                    0.585f, 0.799f, 0.13f, 190, 174, 145, 255);
+            }
+
+            DrawMenuRect(0.57f, 0.842f, 0.38f, 0.0015f, 105, 91, 69, 210);
+            DrawMenuText(_appearanceAssetListOpen
+                    ? "ENTER: APLICAR Y GUARDAR  ·  ATRAS: CATEGORIAS"
+                    : "ENTER: ELEGIR  ·  IZQ/DCHA: ROTAR  ·  ATRAS: CERRAR",
+                0.575f, 0.868f, 0.132f, 188, 179, 159, 255);
+            DrawMenuText("Cambios aplicados al instante. Se reaplican al recrear el NPC.",
+                0.575f, 0.904f, 0.125f, 164, 157, 141, 255);
+        }
+
+        private void CloseAppearanceEditor(bool notify)
+        {
+            bool wasOpen = _appearanceEditorOpen;
+            _appearanceEditorOpen = false;
+            _appearanceAssetListOpen = false;
+
+            try
+            {
+                if (_appearanceCameraHandle != 0)
+                {
+                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { false, true, 350, true, true, 0 });
+                    Function.Call(SetCameraActiveHash, new InputArgument[] { _appearanceCameraHandle, false });
+                    Function.Call(DestroyCameraHash, new InputArgument[] { _appearanceCameraHandle, true });
+                }
+            }
+            catch (Exception ex) { Log.Write("Appearance preview camera cleanup warning: " + ex.Message); }
+            _appearanceCameraHandle = 0;
+
+            try
+            {
+                if (_appearanceFrozenHandle != 0 && _appearanceTargetPed != null &&
+                    _appearanceTargetPed.Exists() && _appearanceTargetPed.Handle == _appearanceFrozenHandle)
+                    Function.Call(FreezeEntityPositionHash, new InputArgument[] { _appearanceFrozenHandle, false });
+            }
+            catch (Exception ex) { Log.Write("Appearance preview ped unfreeze warning: " + ex.Message); }
+            _appearanceFrozenHandle = 0;
+            _appearanceTargetPed = null;
+            _appearanceTargetId = string.Empty;
+            _appearanceTargetName = string.Empty;
+            _appearanceTargetModelHash = 0U;
+            _appearanceCategoryIndex = 0;
+            _appearanceAssetIndex = 0;
+            _appearanceViewAngle = 0f;
+
+            if (wasOpen)
+                Log.Write("Appearance editor closed.");
+            if (notify && wasOpen)
+                Notify("Editor cerrado. Las piezas elegidas quedaron guardadas.");
         }
 
         private bool ResolveUiDrawMethods()
