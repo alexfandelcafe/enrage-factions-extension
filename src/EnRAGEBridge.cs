@@ -2689,11 +2689,15 @@ namespace EnRAGEPlayerFactionExtension
                     (rosterModalMethods.Length == 0 ? "none discovered" : string.Join(", ", rosterModalMethods.Select(m => m.Name).Distinct())) + ".");
 
                 MethodInfo drawDetail = FindMethod(_rosterMenuType, "DrawDetail", 0);
+                // The roster can render its dossier separately from Draw(); suppress that path
+                // as well while the custom editor owns the screen.
+                PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPrefix), true);
                 PatchIfFound(drawDetail, nameof(FounderPatches.PlayerFactionDrawDetailPostfix), false);
                 if (drawDetail == null)
                     Log.Write("WARNING: RosterMenu.DrawDetail() not found; player faction dossier cannot switch to gang-member presentation.");
                 MethodInfo drawBar = FindMethod(_rosterMenuType, "DrawFactionBar", 1);
+                PatchIfFound(drawBar, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
                 PatchIfFound(drawBar, nameof(FounderPatches.PlayerFactionDrawBarPrefix), true);
                 PatchIfFound(drawBar, nameof(FounderPatches.PlayerFactionDrawBarPostfix), false);
             }
