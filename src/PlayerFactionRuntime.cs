@@ -2032,8 +2032,7 @@ namespace EnRAGEPlayerFactionExtension
                 // Mission/recruited peds can have the ambient social prompt disabled by default.
                 // Flag 130 must be false for RDR2's native greet/antagonize prompts to appear.
                 PED.SET_PED_CONFIG_FLAG(ped.Handle, 130, false);
-                // These flags keep interaction lock-on available while permanent ambient reactions
-                // remain blocked for camp AI.
+                // Keep focus/lock-on available for the game's native social interaction system.
                 PED.SET_PED_CONFIG_FLAG(ped.Handle, 297, true);
                 PED.SET_PED_CONFIG_FLAG(ped.Handle, 301, false);
             }
