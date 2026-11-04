@@ -490,6 +490,20 @@ namespace EnRAGEPlayerFactionExtension
                     return parsed;
             }
 
+            uint numeric;
+            if (uint.TryParse(candidate, System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.InvariantCulture, out numeric))
+                return numeric;
+
+            if (candidate.Length == 8 && candidate.Any(c =>
+                (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')))
+            {
+                uint hexadecimal;
+                if (uint.TryParse(candidate, System.Globalization.NumberStyles.HexNumber,
+                    System.Globalization.CultureInfo.InvariantCulture, out hexadecimal))
+                    return hexadecimal;
+            }
+
             try { return MISC.GET_HASH_KEY(candidate); }
             catch { return 0U; }
         }
