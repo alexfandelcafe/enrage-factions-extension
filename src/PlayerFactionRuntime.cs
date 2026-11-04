@@ -1911,6 +1911,7 @@ namespace EnRAGEPlayerFactionExtension
                         ScenarioAnchorIndex = -1
                     };
                     _campboundRosterMembers[member.Handle] = member;
+                    EnsureNativeCampMemberSocialInteraction(member.Ped);
                     if (member.AwaitingDismount)
                     {
                         member.NextPathCheckAt = Game.GameTime + 2000;
@@ -2007,9 +2008,44 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        private void EnsureNativeCampMemberSocialInteraction(Ped ped)
+        {
+            if (ped == null || !ped.Exists() || ped.IsDead) return;
+
+            try
+            {
+                // Mission/recruited peds can have the ambient social prompt disabled by default.
+                // Flag 130 must be false for RDR2's native greet/antagonize prompts to appear.
+                PED.SET_PED_CONFIG_FLAG(ped.Handle, 130, false);
+                // These flags keep interaction lock-on available while permanent ambient reactions
+                // remain blocked for camp AI.
+                PED.SET_PED_CONFIG_FLAG(ped.Handle, 297, true);
+                PED.SET_PED_CONFIG_FLAG(ped.Handle, 301, false);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Camp member native-interaction config warning (" + ped.Handle + "): " + ex.Message);
+            }
+
+            try
+            {
+                // The native greet/antagonize wheel requires the member to remain focusable by the player.
+                Function.Call(SetPedCanBeTargettedHash, new InputArgument[] { ped.Handle, true });
+                if (Game.Player != null)
+                    Function.Call(SetPedCanBeTargettedByPlayerHash, new InputArgument[] { ped.Handle, Game.Player.Handle, true });
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Camp member native-targeting warning (" + ped.Handle + "): " + ex.Message);
+            }
+        }
+
         private void UpdateRosterMemberReturn(CampboundRosterMember member)
         {
             if (member == null || member.Ped == null || !member.Ped.Exists() || member.Ped.IsDead) return;
+
+            // Companion/EnRAGE can refresh their recruit profile; reassert native interaction flags.
+            EnsureNativeCampMemberSocialInteraction(member.Ped);
 
             if (member.Arrived)
             {
