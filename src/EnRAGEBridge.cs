@@ -57,7 +57,6 @@ namespace EnRAGEPlayerFactionExtension
         private bool _companionReleasedProfilePatched;
         private int _nextCompanionRosterNormalizeAt;
         private int _nextPlayerFactionNeutralityAt;
-        private int _nextPlayerFactionCampDiscoveryPrepAt;
 
         internal bool IsAvailable { get { return _mainType != null && _gangsType != null; } }
         internal object MainInstance { get { return FounderPatches.MainInstance; } }
@@ -2704,6 +2703,22 @@ namespace EnRAGEPlayerFactionExtension
     internal static class FounderPatches
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+
+        // FounderPatches is a sibling of EnRAGEBridge, not a nested type. Keep its
+        // reflection/error helpers local so Harmony callbacks do not depend on private
+        // members of the bridge class.
+        private static Type SafeGetType(Assembly assembly, string name)
+        {
+            try { return assembly == null ? null : assembly.GetType(name, false); }
+            catch { return null; }
+        }
+
+        private static string Unwrap(Exception ex)
+        {
+            while (ex is TargetInvocationException && ex.InnerException != null)
+                ex = ex.InnerException;
+            return ex == null ? "Unknown error" : ex.ToString();
+        }
         internal static int FounderHandle;
         internal static object MainInstance;
         internal static string PlayerFactionId;
