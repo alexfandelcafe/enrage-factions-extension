@@ -1,14 +1,16 @@
-# EnRAGE Player Faction Extension — v0.3.6
+# EnRAGE Player Faction Extension — v0.3.7 (pre-release)
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
-> Esta guía describe el comportamiento actual del código de `main`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
+
+> v0.3.7 añade una primera versión del editor de apariencia para miembros de `player_faction`. Esta función es experimental y requiere componentes de atuendos exportados a XML desde YMT-Trainer.
 
 ## Índice
 
 - [Resumen del funcionamiento](#resumen-del-funcionamiento)
 - [Fundar la banda](#fundar-la-banda)
 - [Líder, roster y rangos](#líder-roster-y-rangos)
+- [Editor de apariencia de miembros](#editor-de-apariencia-de-miembros)
 - [Integración con Companion y controles](#integración-con-companion-y-controles)
 - [Vida de campamento](#vida-de-campamento)
 - [Administrador y menú de gestión](#administrador-y-menú-de-gestión)
@@ -29,6 +31,7 @@ Una vez fundada, la banda dispone de:
 - Un campamento exterior registrado como `CampSite` nativo de enRAGE, con su marcador de mapa y sus objetos físicos `CampKit`.
 - Un NPC administrador que permite cambiar el nombre, el alias del líder, los nombres de rango y varias opciones nativas de la facción.
 - Integración con el roster y, cuando está instalada, con **EnRAGECompanionsExtension** para reclutas, órdenes de seguimiento, relaciones y recuperación de personajes.
+- Editor de apariencia por miembro, con cámara de vista previa, categorías MetaPed y persistencia por ID de roster.
 - Miembros que regresan al campamento cuando dejan de seguir al jugador, buscan actividades de campamento y mantienen conversaciones ambientales entre ellos.
 - Defensa reactiva del campamento frente a NPCs que estén atacando directamente al jugador, a un residente o al administrador.
 - Recuperación de datos y del campamento después de recargar los scripts.
@@ -121,6 +124,37 @@ El valor que muestra enRAGE en **HACIA TI** sigue esta escala base:
 | 5 | 90 |
 
 La extensión proporciona ese valor a través de `RegardOfRecord`; no sustituye el sistema general de relaciones de las demás facciones.
+
+## Editor de apariencia de miembros
+
+La primera versión añade **Modificar apariencia** a la ficha de los miembros vivos de la facción del jugador. La opción abre un editor superpuesto con una cámara del NPC a la izquierda y un panel de categorías a la derecha. El editor actúa sobre el ped real y lo congela temporalmente para reducir movimientos inesperados.
+
+### Preparar el catálogo
+
+El editor no incluye ni redistribuye activos del juego. Lee componentes de archivos XML exportados por YMT-Trainer desde:
+
+`<carpeta de RDR2>\\YMTTFiles\\SavedYMTs\\*.xml`
+
+Exportá uno o más conjuntos desde YMT-Trainer y comprobá que los XML estén en esa carpeta. El catálogo reconoce drawables de sombreros, pelo, barba, cabeza, camisas, chalecos, abrigos, pantalones, botas, guantes, cinturones, pañuelos, corbatas y otras categorías. Sólo aparecen piezas halladas en los XML exportados.
+
+### Uso
+
+1. Abrí el roster nativo de enRAGE y entrá en la ficha de un miembro vivo de `player_faction`.
+2. Seleccioná **Modificar apariencia**. En v1, el miembro debe tener un ped vivo asociado a su registro y estar a menos de 85 metros del jugador.
+3. Elegí una categoría, abrila y seleccioná un componente del catálogo.
+4. La pieza se aplica directamente al NPC y se guarda en el momento. La flecha izquierda/derecha gira la vista de cámara; atrás vuelve de la lista de piezas a las categorías y luego cierra el editor.
+5. Usá **Recargar catálogo** si añadiste nuevos XML mientras el juego está abierto.
+
+### Persistencia y límites de la primera versión
+
+- Los perfiles se guardan en `scripts/EnRAGEPlayerFactionExtension/MemberAppearances.json`, separados de `PlayerFaction.json`.
+- Cada perfil se identifica por el ID persistente del registro del roster, no por el handle temporal del ped.
+- La extensión reaplica las piezas guardadas cuando detecta un ped nuevo para el mismo registro, si el modelo sigue coincidiendo.
+- Cada pieza se guarda inmediatamente; por lo tanto, cerrar el editor no revierte cambios. La edición por transacción, los presets, deshacer/rehacer y el NPC de vista previa separado quedan para una versión posterior.
+- La compatibilidad de activos depende de los XML exportados y del modelo del NPC. La versión inicial compara el hash del modelo del miembro con el perfil guardado, pero no puede garantizar que cada drawable del catálogo sea compatible con todos los modelos. Si un componente no se muestra bien, probá un XML extraído para un modelo equivalente.
+- Esta versión no incluye cambio de modelo completo ni inventario/armas funcionales. Los componentes MetaPed visibles son independientes del arma equipada en combate.
+
+La base de código se integra con el menú de roster existente mediante Harmony y sigue usando el puente de Reflection hacia enRAGE. No reemplaza el roster ni introduce un segundo sistema de miembros.
 
 ## Integración con Companion y controles
 
