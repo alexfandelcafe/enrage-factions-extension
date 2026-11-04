@@ -29,6 +29,7 @@ namespace EnRAGEPlayerFactionExtension
         private const string FounderPoiSprite = "blip_poi";
         private const string PlayerCampBlipStyle = "BLIP_STYLE_MP_CAMP";
         private const ulong IsControlJustPressedHash = 0x580417101DDB492FUL;
+        private const ulong IsDisabledControlJustPressedHash = 0x91AEF906BCA88877UL;
         private const ulong PromptGetGroupForEntityHash = 0xB796970BD125FCE8UL;
         private const ulong PromptHasHoldModeCompletedHash = 0xE0F65F0640EF0617UL;
         private const ulong PromptHasStandardModeCompletedHash = 0xC92AC953F0A982AEUL;
@@ -52,6 +53,10 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong SetCameraActiveHash = 0x87295BCA613800C8UL;
         private const ulong SetCameraCoordinateHash = 0xF9EE7D419EE49DE6UL;
         private const ulong PointCameraAtCoordHash = 0x948B39341C3A40C2UL;
+        private const ulong PointCameraAtEntityHash = 0xFC2867E6074D3A61UL;
+        private const ulong IsCameraRenderingHash = 0x4415F8A6C536D39FUL;
+        private const ulong SetStreamingFocusEntityHash = 0x955AEDD58F4BD309UL;
+        private const ulong ClearStreamingFocusHash = 0x86CCAF7CE493EFBEUL;
         private const ulong SetCameraFovHash = 0x27666E5988D9D429UL;
         private const ulong RenderScriptCamerasHash = 0x33281167E4942E4FUL;
         private const ulong DestroyCameraHash = 0x4E67E0B6D7FD5145UL;
@@ -144,6 +149,9 @@ namespace EnRAGEPlayerFactionExtension
         private int _appearanceAssetIndex;
         private int _appearanceCameraHandle;
         private int _appearanceFrozenHandle;
+        private bool _appearanceStreamingFocusActive;
+        private bool _appearanceCameraRenderWarningLogged;
+        private int _nextAppearanceCameraCheckAt;
         private float _appearanceViewAngle;
         private string _appearanceTargetId = string.Empty;
         private string _appearanceTargetName = string.Empty;
@@ -1241,6 +1249,10 @@ namespace EnRAGEPlayerFactionExtension
 
             try
             {
+                // Stream the NPC's local scene as well as rendering from its camera. The player
+                // can be up to 85 m away, outside the normal streaming focus of the gameplay camera.
+                Function.Call(SetStreamingFocusEntityHash, new InputArgument[] { target.Handle });
+                _appearanceStreamingFocusActive = true;
                 Function.Call(FreezeEntityPositionHash, new InputArgument[] { target.Handle, true });
                 _appearanceFrozenHandle = target.Handle;
                 _appearanceCameraHandle = Function.Call<int>(CreateScriptCameraHash,
@@ -1250,7 +1262,9 @@ namespace EnRAGEPlayerFactionExtension
                     Function.Call(SetCameraActiveHash, new InputArgument[] { _appearanceCameraHandle, true });
                     Function.Call(SetCameraFovHash, new InputArgument[] { _appearanceCameraHandle, 44.0f });
                     UpdateAppearanceCamera();
-                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { true, true, 350, true, true, 0 });
+                    // The roster may have set time scale to zero immediately before this action.
+                    // Do not use a timed camera blend: it can stall while the world is paused.
+                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { true, false, 0, true, true, 0 });
                 }
             }
             catch (Exception ex)
@@ -1409,7 +1423,85 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             UpdateAppearanceCamera();
-            if (JustPressed(ControlFrontendCancel))
+            EnsureAppearanceCameraRendering();
+
+            // EnRAGE disables frontend/gameplay controls while its roster is open. Read both
+            // enabled and disabled control states so gamepad navigation still works in that case.
+            int[] controls =
+            {
+                ControlFrontendCancel, ControlFrontendLeft, ControlFrontendRight,
+                ControlFrontendUp, ControlFrontendDown, ControlFrontendAccept
+            };
+            foreach (int control in controls)
+            {
+                if (AppearanceControlJustPressed(control))
+                {
+                    HandleAppearanceEditorControl(control);
+                    return;
+                }
+            }
+        }
+
+        // EnRAGE's keyboard path is a WinForms OnKeyDown event, not PAD control polling.
+        // Harmony forwards those physical key events here while the editor owns the screen.
+        internal bool HandleAppearanceEditorKey(int keyCode)
+        {
+            if (!_appearanceEditorOpen) return false;
+
+            switch (keyCode)
+            {
+                case 27: // Escape
+                case 8:  // Backspace
+                    HandleAppearanceEditorControl(ControlFrontendCancel);
+                    break;
+                case 37: // Left
+                    HandleAppearanceEditorControl(ControlFrontendLeft);
+                    break;
+                case 39: // Right
+                    HandleAppearanceEditorControl(ControlFrontendRight);
+                    break;
+                case 38: // Up
+                    HandleAppearanceEditorControl(ControlFrontendUp);
+                    break;
+                case 40: // Down
+                    HandleAppearanceEditorControl(ControlFrontendDown);
+                    break;
+                case 13: // Enter
+                case 32: // Space
+                    HandleAppearanceEditorControl(ControlFrontendAccept);
+                    break;
+            }
+
+            // Consume all keyboard input while the editor is active so EnRAGE cannot reopen
+            // its roster, trigger another panel, or dispatch a key to the hidden dossier.
+            return true;
+        }
+
+        private bool AppearanceControlJustPressed(int control)
+        {
+            foreach (int group in new[] { 0, 2 })
+            {
+                InputArgument[] args = { group, control };
+                try
+                {
+                    if (Function.Call<bool>(IsDisabledControlJustPressedHash, args) ||
+                        Function.Call<bool>(IsControlJustPressedHash, args))
+                        return true;
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Appearance editor control read warning: " + ex.Message);
+                    return false;
+                }
+            }
+            return false;
+        }
+
+        private void HandleAppearanceEditorControl(int control)
+        {
+            if (!_appearanceEditorOpen) return;
+
+            if (control == ControlFrontendCancel)
             {
                 if (_appearanceAssetListOpen)
                 {
@@ -1423,21 +1515,20 @@ namespace EnRAGEPlayerFactionExtension
                 return;
             }
 
-            if (JustPressed(ControlFrontendLeft))
+            if (control == ControlFrontendLeft)
             {
-                _appearanceViewAngle -= 20f;
-                if (_appearanceViewAngle < 0f) _appearanceViewAngle += 360f;
+                _appearanceViewAngle = (_appearanceViewAngle + 340f) % 360f;
                 UpdateAppearanceCamera();
                 return;
             }
-            if (JustPressed(ControlFrontendRight))
+            if (control == ControlFrontendRight)
             {
                 _appearanceViewAngle = (_appearanceViewAngle + 20f) % 360f;
                 UpdateAppearanceCamera();
                 return;
             }
 
-            if (JustPressed(ControlFrontendUp))
+            if (control == ControlFrontendUp)
             {
                 if (_appearanceAssetListOpen)
                 {
@@ -1453,7 +1544,7 @@ namespace EnRAGEPlayerFactionExtension
                 return;
             }
 
-            if (JustPressed(ControlFrontendDown))
+            if (control == ControlFrontendDown)
             {
                 if (_appearanceAssetListOpen)
                 {
@@ -1468,7 +1559,7 @@ namespace EnRAGEPlayerFactionExtension
                 return;
             }
 
-            if (!JustPressed(ControlFrontendAccept)) return;
+            if (control != ControlFrontendAccept) return;
             if (_appearanceAssetListOpen)
             {
                 if (_appearanceFilteredAssets.Count > 0 &&
@@ -1480,29 +1571,58 @@ namespace EnRAGEPlayerFactionExtension
             int categoryCount = YmtAppearanceCatalog.Categories.Count;
             if (_appearanceCategoryIndex < categoryCount)
             {
-                MetaPedCategory category = YmtAppearanceCatalog.Categories[_appearanceCategoryIndex];
+                MetaPedCategory selected = YmtAppearanceCatalog.Categories[_appearanceCategoryIndex];
                 _appearanceFilteredAssets = _appearanceAssets
-                    .Where(x => string.Equals(x.CategoryKey, category.Key, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(x => x.SourceOutfit, StringComparer.OrdinalIgnoreCase)
+                    .Where(x => string.Equals(x.CategoryKey, selected.Key, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
                     .ToList();
                 _appearanceAssetIndex = 0;
                 _appearanceAssetListOpen = true;
-                if (_appearanceFilteredAssets.Count == 0)
-                    Notify("No hay componentes de " + category.Label + " en el catálogo. Exportá conjuntos XML desde YMT-Trainer y recargá el catálogo.");
-                return;
             }
-
-            if (_appearanceCategoryIndex == categoryCount)
+            else if (_appearanceCategoryIndex == categoryCount)
             {
                 RefreshAppearanceCatalog();
-                _appearanceCategoryIndex = 0;
-                Notify("Catálogo actualizado: " + _appearanceAssets.Count + " componentes desde " +
-                    _appearanceCatalogFilesScanned + " conjunto(s) YMT.");
-                return;
+                _appearanceCategoryIndex = Math.Min(_appearanceCategoryIndex, YmtAppearanceCatalog.Categories.Count + 1);
             }
+            else
+            {
+                CloseAppearanceEditor(true);
+            }
+        }
 
-            CloseAppearanceEditor(true);
+        private void EnsureAppearanceCameraRendering()
+        {
+            if (_appearanceCameraHandle == 0 || Game.GameTime < _nextAppearanceCameraCheckAt)
+                return;
+
+            _nextAppearanceCameraCheckAt = Game.GameTime + 1000;
+            try
+            {
+                bool rendering = Function.Call<bool>(IsCameraRenderingHash,
+                    new InputArgument[] { _appearanceCameraHandle });
+                if (rendering)
+                {
+                    _appearanceCameraRenderWarningLogged = false;
+                    return;
+                }
+
+                Function.Call(SetCameraActiveHash, new InputArgument[] { _appearanceCameraHandle, true });
+                Function.Call(RenderScriptCamerasHash, new InputArgument[] { true, false, 0, true, true, 0 });
+                if (!_appearanceCameraRenderWarningLogged)
+                {
+                    _appearanceCameraRenderWarningLogged = true;
+                    Log.Write("Appearance preview camera was not rendering; reactivated camera handle " +
+                        _appearanceCameraHandle + ".");
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_appearanceCameraRenderWarningLogged)
+                {
+                    _appearanceCameraRenderWarningLogged = true;
+                    Log.Write("Appearance preview camera validation failed: " + ex.Message);
+                }
+            }
         }
 
         private void ApplySelectedAppearanceAsset()
@@ -1631,9 +1751,11 @@ namespace EnRAGEPlayerFactionExtension
                 float aimX = position.X + (float)Math.Cos(radians) * 1.05f;
                 float aimY = position.Y - (float)Math.Sin(radians) * 1.05f;
                 float aimZ = position.Z + 0.95f;
-                Function.Call(PointCameraAtCoordHash, new InputArgument[]
+                // Aim at the ped itself, not a point offset in world space. This keeps the
+                // selected NPC inside the frame for every orbit angle and heading.
+                Function.Call(PointCameraAtEntityHash, new InputArgument[]
                 {
-                    _appearanceCameraHandle, aimX, aimY, aimZ
+                    _appearanceCameraHandle, _appearanceTargetPed.Handle, 0f, 0f, 0.95f, true
                 });
             }
             catch (Exception ex)
@@ -1775,6 +1897,14 @@ namespace EnRAGEPlayerFactionExtension
             _appearanceCategoryIndex = 0;
             _appearanceAssetIndex = 0;
             _appearanceViewAngle = 0f;
+            if (_appearanceStreamingFocusActive)
+            {
+                try { Function.Call(ClearStreamingFocusHash, new InputArgument[0]); }
+                catch (Exception ex) { Log.Write("Appearance streaming focus cleanup warning: " + ex.Message); }
+                _appearanceStreamingFocusActive = false;
+            }
+            _appearanceCameraRenderWarningLogged = false;
+            _nextAppearanceCameraCheckAt = 0;
             RestoreAppearanceRosterMenu();
 
             if (wasOpen)
