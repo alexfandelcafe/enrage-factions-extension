@@ -52,6 +52,9 @@ namespace EnRAGEPlayerFactionExtension
         private bool _patched;
         private bool _companionFriendshipPatched;
         private bool _companionRosterCommitPatched;
+        private bool _companionNativeSocialPrefixPatched;
+        private bool _companionDismissedProfilePatched;
+        private bool _companionReleasedProfilePatched;
         private int _nextCompanionRosterNormalizeAt;
         private int _nextPlayerFactionNeutralityAt;
         private int _nextPlayerFactionCampDiscoveryPrepAt;
@@ -1761,7 +1764,9 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void TryInstallCompanionIntegrationPatches()
         {
-            if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched)) return;
+            if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched &&
+                _companionNativeSocialPrefixPatched && _companionDismissedProfilePatched &&
+                _companionReleasedProfilePatched)) return;
             try
             {
                 Type hooks = AppDomain.CurrentDomain.GetAssemblies()
@@ -1792,6 +1797,49 @@ namespace EnRAGEPlayerFactionExtension
                         PatchIfFound(commit, nameof(FounderPatches.CompanionEnsurePlayerFactionRosterPostfix), false);
                         _companionRosterCommitPatched = true;
                         Log.Write("Companion player_faction roster-normalization postfix installed.");
+                    }
+                }
+
+                if (!_companionNativeSocialPrefixPatched)
+                {
+                    MethodInfo socialPrefix = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "UpdateSocialPrefix" && m.IsStatic &&
+                        m.GetParameters().Length == 2 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(object[]));
+                    if (socialPrefix != null)
+                    {
+                        PatchFirstIfFound(socialPrefix, nameof(FounderPatches.AllowNativeSocialForPlayerFactionPrefix));
+                        _companionNativeSocialPrefixPatched = true;
+                        Log.Write("Companion social-prefix bypass installed for player-faction roster members.");
+                    }
+                }
+
+                if (!_companionDismissedProfilePatched)
+                {
+                    MethodInfo dismissedProfile = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "ApplyDismissedCombatProfile" && m.IsStatic &&
+                        m.GetParameters().Length == 1 &&
+                        m.GetParameters()[0].ParameterType == typeof(Ped));
+                    if (dismissedProfile != null)
+                    {
+                        PatchIfFound(dismissedProfile, nameof(FounderPatches.RestoreNativeCampMemberInteractionPostfix), false);
+                        _companionDismissedProfilePatched = true;
+                        Log.Write("Companion dismissed-profile native-interaction restore installed.");
+                    }
+                }
+
+                if (!_companionReleasedProfilePatched)
+                {
+                    MethodInfo releasedProfile = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "ApplyAmbientReleasedCombatProfile" && m.IsStatic &&
+                        m.GetParameters().Length == 1 &&
+                        m.GetParameters()[0].ParameterType == typeof(Ped));
+                    if (releasedProfile != null)
+                    {
+                        PatchIfFound(releasedProfile, nameof(FounderPatches.RestoreNativeCampMemberInteractionPostfix), false);
+                        _companionReleasedProfilePatched = true;
+                        Log.Write("Companion released-profile native-interaction restore installed.");
                     }
                 }
 
@@ -1980,6 +2028,9 @@ namespace EnRAGEPlayerFactionExtension
             _patched = false;
             _companionFriendshipPatched = false;
             _companionRosterCommitPatched = false;
+            _companionNativeSocialPrefixPatched = false;
+            _companionDismissedProfilePatched = false;
+            _companionReleasedProfilePatched = false;
             _nextCompanionRosterNormalizeAt = 0;
         }
 
@@ -2473,7 +2524,9 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Stale Harmony owner cleanup warning: " + Unwrap(ex)); }
             _harmony = new Harmony(HarmonyId);
             PatchIfFound(FindMethod(_mainType, "OnTick", 2), nameof(FounderPatches.MainTickPrefix), true);
-            PatchFirstIfFound(FindPedArgumentMethod(_mainType, "UpdateSocial", 1), nameof(FounderPatches.UpdateSocialPrefix));
+            MethodInfo updateSocial = FindPedArgumentMethod(_mainType, "UpdateSocial", 1);
+            PatchFirstIfFound(updateSocial, nameof(FounderPatches.UpdateSocialPrefix));
+            PatchIfFound(updateSocial, nameof(FounderPatches.UpdateSocialPostfix), false);
             PatchFirstIfFound(FindPedArgumentMethod(_mainType, "LearnCampSites", 1), nameof(FounderPatches.PreparePlayerFactionCampDiscoveryPrefix));
             PatchIfFound(FindMethod(_mainType, "AssignCamps", 0), nameof(FounderPatches.PreventPlayerFactionCampAssignmentPostfix), false);
 
@@ -3164,16 +3217,11 @@ namespace EnRAGEPlayerFactionExtension
                     return false; // manager only exposes its dedicated administration prompt.
                 }
 
-                if (Runtime != null && Runtime.IsCampMemberSocialTarget(target.Handle, player))
+                if (Runtime != null && Runtime.IsPlayerFactionRosterPed(target.Handle))
                 {
-                    MethodInfo hide = __instance.GetType().GetMethods(Flags)
-                        .FirstOrDefault(m => m.Name == "HideSocialPrompt" && m.GetParameters().Length == 0);
-                    if (hide != null) hide.Invoke(__instance, null);
-                    MethodInfo hat = __instance.GetType().GetMethods(Flags)
-                        .FirstOrDefault(m => m.Name == "UpdateHatAnim" && m.GetParameters().Length == 1 &&
-                                             m.GetParameters()[0].ParameterType == typeof(Ped));
-                    if (hat != null) hat.Invoke(__instance, new object[] { player });
-                    return false; // The game handles native greet/antagonize input.
+                    // Let enRAGE's original social cycle run so the game's native greet/antagonize
+                    // interaction can operate. The postfix below removes only enRAGE's extra prompt.
+                    return true;
                 }
                 return true;
             }
@@ -3181,6 +3229,100 @@ namespace EnRAGEPlayerFactionExtension
             {
                 Log.Write("UpdateSocial target guard warning: " + ex.Message);
                 return true;
+            }
+        }
+
+        private static Ped GetSocialTarget(object main, Ped player)
+        {
+            if (main == null || player == null || !player.Exists()) return null;
+            try
+            {
+                MethodInfo socialTarget = main.GetType().GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "SocialTarget" && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType == typeof(Ped));
+                if (socialTarget == null) return null;
+                object result = socialTarget.Invoke(main, new object[] { player });
+                if (result == null) return null;
+                FieldInfo item1 = result.GetType().GetField("Item1");
+                return item1 != null ? item1.GetValue(result) as Ped : null;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Player-faction native social target lookup warning: " + Unwrap(ex));
+                return null;
+            }
+        }
+
+        internal static void UpdateSocialPostfix(object __instance, object[] __args)
+        {
+            try
+            {
+                if (Runtime == null || __instance == null || __args == null ||
+                    __args.Length == 0 || !(__args[0] is Ped player))
+                    return;
+                Ped target = GetSocialTarget(__instance, player);
+                if (target == null || !target.Exists() ||
+                    !Runtime.IsPlayerFactionRosterPed(target.Handle))
+                    return;
+
+                // Remove only enRAGE's additional social prompt after its update. The native
+                // RDR2 greet/antagonize controls and Companion's separate call prompt remain.
+                MethodInfo hide = __instance.GetType().GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "HideSocialPrompt" && m.GetParameters().Length == 0);
+                if (hide != null) hide.Invoke(__instance, null);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Player-faction social prompt cleanup warning: " + Unwrap(ex));
+            }
+        }
+
+        internal static bool AllowNativeSocialForPlayerFactionPrefix(object[] __args, ref bool __result)
+        {
+            try
+            {
+                // This patch targets Companion's own UpdateSocialPrefix method. Its arguments are
+                // (NemesisMod instance, original UpdateSocial arguments[]).
+                if (Runtime == null || __args == null || __args.Length < 2)
+                    return true;
+                object main = __args[0];
+                object[] socialArgs = __args[1] as object[];
+                Ped player = socialArgs != null && socialArgs.Length > 0 ? socialArgs[0] as Ped : null;
+                Ped target = GetSocialTarget(main, player);
+                if (target == null || !target.Exists() ||
+                    !Runtime.IsPlayerFactionRosterPed(target.Handle))
+                    return true;
+
+                // Preserve Companion's normal generic prompt target for its independent follow/call
+                // action, but skip its replacement of native greet/antagonize.
+                Type hooks = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
+                    .FirstOrDefault(t => t != null);
+                FieldInfo preferred = hooks != null ? hooks.GetField("_preferredGenericPed", Flags) : null;
+                if (preferred != null) preferred.SetValue(null, target);
+
+                __result = true; // Continue into NemesisMod.UpdateSocial.
+                return false;    // Skip only Companion's social override.
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion native-social bypass warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
+        internal static void RestoreNativeCampMemberInteractionPostfix(Ped __0)
+        {
+            try
+            {
+                if (Runtime == null || __0 == null || !__0.Exists() ||
+                    !Runtime.IsPlayerFactionRosterPed(__0.Handle))
+                    return;
+                Runtime.EnsureNativeCampMemberSocialInteraction(__0);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion camp-member native-interaction restore warning: " + Unwrap(ex));
             }
         }
 
