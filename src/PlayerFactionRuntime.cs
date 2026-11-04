@@ -51,7 +51,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong CreateScriptCameraHash = 0xE72CDBA7F0A02DD6UL;
         private const ulong SetCameraActiveHash = 0x87295BCA613800C8UL;
         private const ulong SetCameraCoordinateHash = 0xF9EE7D419EE49DE6UL;
-        private const ulong PointCameraAtCoordHash = 0xF75497BB865F0803UL;
+        private const ulong PointCameraAtCoordHash = 0x948B39341C3A40C2UL;
         private const ulong SetCameraFovHash = 0x27666E5988D9D429UL;
         private const ulong RenderScriptCamerasHash = 0x33281167E4942E4FUL;
         private const ulong DestroyCameraHash = 0x4E67E0B6D7FD5145UL;
