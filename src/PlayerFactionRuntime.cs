@@ -69,7 +69,6 @@ namespace EnRAGEPlayerFactionExtension
         private int _campManagerPromptGroup;
         private int _nextCampManagerSpawnAt;
         private int _nextCampManagerProtectionAt;
-        private int _nextCampManagerScenarioCheckAt; // retained for save/schema compatibility within the runtime class
         private CampboundRosterMember _campManagerIdle;
         private readonly Random _campScenarioRandom = new Random();
         private bool _campManagerPromptArmed = true;
