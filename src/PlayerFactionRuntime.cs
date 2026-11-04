@@ -1251,7 +1251,7 @@ namespace EnRAGEPlayerFactionExtension
                 _appearanceCameraHandle = 0;
                 try
                 {
-                    Function.Call(RenderScriptCamsHash, new InputArgument[] { false, true, 150, true, true, 0 });
+                    Function.Call(RenderScriptCamerasHash, new InputArgument[] { false, true, 150, true, true, 0 });
                     if (failedCamera != 0)
                     {
                         Function.Call(SetCameraActiveHash, new InputArgument[] { failedCamera, false });
