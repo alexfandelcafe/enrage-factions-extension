@@ -2676,7 +2676,7 @@ namespace EnRAGEPlayerFactionExtension
                 MethodInfo rosterHandleKey = _rosterMenuType.GetMethods(InstanceFlags).FirstOrDefault(m =>
                     m.Name == "HandleKey" && m.GetParameters().Length == 1 &&
                     m.GetParameters()[0].ParameterType.FullName == "System.Windows.Forms.Keys");
-                PatchIfFound(rosterHandleKey, nameof(FounderPatches.PlayerFactionRosterModalInputPrefix), true);
+                PatchIfFound(rosterHandleKey, nameof(FounderPatches.PlayerFactionHandleKeyPrefix), true);
                 if (rosterHandleKey == null)
                     Log.Write("WARNING: RosterMenu.HandleKey(Keys) not found; IsOpen suspension remains the primary input isolation.");
 
@@ -3056,7 +3056,7 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        internal static bool PlayerFactionRosterModalInputPrefix(object __instance)
+        internal static bool PlayerFactionHandleKeyPrefix(object __instance)
         {
             try
             {
