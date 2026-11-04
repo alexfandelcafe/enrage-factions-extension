@@ -142,8 +142,9 @@ Exportá uno o más conjuntos desde YMT-Trainer y comprobá que los XML estén e
 1. Abrí el roster nativo de enRAGE y entrá en la ficha de un miembro vivo de `player_faction`.
 2. Seleccioná **Modificar apariencia**. En v1, el miembro debe tener un ped vivo asociado a su registro y estar a menos de 85 metros del jugador.
 3. Elegí una categoría, abrila y seleccioná un componente del catálogo.
-4. La pieza se aplica directamente al NPC y se guarda en el momento. La flecha izquierda/derecha gira la vista de cámara; atrás vuelve de la lista de piezas a las categorías y luego cierra el editor.
-5. Usá **Recargar catálogo** si añadiste nuevos XML mientras el juego está abierto.
+4. Navegación: `↑/↓` cambia de categoría o componente; `←/→` gira la cámara; `Enter` abre/aplica; `Esc` o `Backspace` vuelve y luego cierra. También se admiten los controles frontend equivalentes del gamepad.
+5. La pieza se aplica directamente al NPC y se guarda en el momento.
+6. Usá **Recargar catálogo** si añadiste nuevos XML mientras el juego está abierto.
 
 ### Persistencia y límites de la primera versión
 
