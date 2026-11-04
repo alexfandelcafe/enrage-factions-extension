@@ -520,6 +520,18 @@ namespace EnRAGEPlayerFactionExtension
                    player != null && player.Exists() && _campManager.Position.DistanceTo(player.Position) <= 3.5f;
         }
 
+        internal bool IsPlayerFactionRosterPed(int handle)
+        {
+            if (handle == 0 || _faction == null) return false;
+            if (_campboundRosterMembers.ContainsKey(handle)) return true;
+
+            // Handles are persisted with the roster records and remain valid across a ScriptHook
+            // script reload in the same game process. Use this map before the camp AI dictionary
+            // has been rebuilt so Companion's first post-reload maintenance pass cannot disable talk.
+            return _faction.CampRosterPedHandles != null &&
+                   _faction.CampRosterPedHandles.Values.Contains(handle);
+        }
+
         internal bool IsCampMemberSocialTarget(int handle, Ped player)
         {
             if (handle == 0 || player == null || !player.Exists() ||
@@ -2014,6 +2026,9 @@ namespace EnRAGEPlayerFactionExtension
 
             try
             {
+                // Companion applies BlockPermanentEvents=true to dismissed recruits. That prevents
+                // the ambient social system from answering RDR2's native greet/antagonize controls.
+                ped.BlockPermanentEvents = false;
                 // Mission/recruited peds can have the ambient social prompt disabled by default.
                 // Flag 130 must be false for RDR2's native greet/antagonize prompts to appear.
                 PED.SET_PED_CONFIG_FLAG(ped.Handle, 130, false);
