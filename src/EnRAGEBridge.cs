@@ -2620,6 +2620,12 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Stale Harmony owner cleanup warning: " + Unwrap(ex)); }
             _harmony = new Harmony(HarmonyId);
             PatchIfFound(FindMethod(_mainType, "OnTick", 2), nameof(FounderPatches.MainTickPrefix), true);
+            MethodInfo mainKeyDown = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                m.Name == "OnKeyDown" && m.GetParameters().Length == 2 &&
+                m.GetParameters()[1].ParameterType.FullName == "System.Windows.Forms.KeyEventArgs");
+            PatchIfFound(mainKeyDown, nameof(FounderPatches.PlayerFactionMainOnKeyDownPrefix), true);
+            if (mainKeyDown == null)
+                Log.Write("WARNING: NemesisMod.OnKeyDown(object, KeyEventArgs) not found; keyboard editor navigation will rely on native input polling.");
             MethodInfo updateSocial = FindPedArgumentMethod(_mainType, "UpdateSocial", 1);
             PatchFirstIfFound(updateSocial, nameof(FounderPatches.UpdateSocialPrefix));
             PatchIfFound(updateSocial, nameof(FounderPatches.UpdateSocialPostfix), false);
@@ -3056,12 +3062,40 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        internal static bool PlayerFactionMainOnKeyDownPrefix(object __instance, object[] __args)
+        {
+            try
+            {
+                if (Runtime == null || !Runtime.IsAppearanceEditorOpen)
+                    return true;
+
+                object keyEventArgs = __args != null && __args.Length > 1 ? __args[1] : null;
+                if (keyEventArgs != null)
+                {
+                    PropertyInfo keyCodeProperty = keyEventArgs.GetType().GetProperty("KeyCode",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    object keyCode = keyCodeProperty != null ? keyCodeProperty.GetValue(keyEventArgs, null) : null;
+                    if (keyCode != null)
+                        Runtime.HandleAppearanceEditorKey(Convert.ToInt32(keyCode));
+                    else
+                        Log.Write("Appearance editor keyboard event did not expose KeyCode.");
+                }
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Appearance editor keyboard routing warning: " + Unwrap(ex));
+                // Do not let an unhandled key fall through into enRAGE while the editor owns the screen.
+                return false;
+            }
+        }
+
         internal static bool PlayerFactionHandleKeyPrefix(object __instance)
         {
             try
             {
-                // This patch is installed only on zero-argument roster update/input methods.
-                // Returning false makes the appearance editor the sole owner of navigation.
+                // This patch is installed specifically on RosterMenu.HandleKey(Keys).
+                // The main OnKeyDown hook normally consumes keys first; this is a second guard.
                 return Runtime == null || !Runtime.IsAppearanceEditorOpen;
             }
             catch (Exception ex)
