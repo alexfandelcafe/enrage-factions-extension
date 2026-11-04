@@ -53,7 +53,6 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong SetCameraActiveHash = 0x87295BCA613800C8UL;
         private const ulong SetCameraCoordinateHash = 0xF9EE7D419EE49DE6UL;
         private const ulong PointCameraAtCoordHash = 0x948B39341C3A40C2UL;
-        private const ulong PointCameraAtEntityHash = 0xFC2867E6074D3A61UL;
         private const ulong IsCameraRenderingHash = 0x4415F8A6C536D39FUL;
         private const ulong SetStreamingFocusEntityHash = 0x955AEDD58F4BD309UL;
         private const ulong ClearStreamingFocusHash = 0x86CCAF7CE493EFBEUL;
@@ -1771,11 +1770,16 @@ namespace EnRAGEPlayerFactionExtension
                 float z = position.Z + 1.15f;
                 Function.Call(SetCameraCoordinateHash, new InputArgument[] { _appearanceCameraHandle, x, y, z });
 
-                // Aim at the ped itself, not a point offset in world space. This keeps the
-                // selected NPC inside the frame for every orbit angle and heading.
-                Function.Call(PointCameraAtEntityHash, new InputArgument[]
+                // Compose the ped into the left-hand preview area. Camera-right in world space
+                // is (-cos, +sin); aim there so the ped appears left of center instead of behind
+                // the opaque settings panel on the right.
+                const float subjectShift = 0.85f;
+                float aimX = position.X - (float)Math.Cos(radians) * subjectShift;
+                float aimY = position.Y + (float)Math.Sin(radians) * subjectShift;
+                float aimZ = position.Z + 0.95f;
+                Function.Call(PointCameraAtCoordHash, new InputArgument[]
                 {
-                    _appearanceCameraHandle, _appearanceTargetPed.Handle, 0f, 0f, 0.95f, true
+                    _appearanceCameraHandle, aimX, aimY, aimZ
                 });
             }
             catch (Exception ex)
