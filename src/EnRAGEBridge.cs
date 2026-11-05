@@ -1834,6 +1834,60 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        private static void ForceCompanionRecruitmentIds(Type hooks)
+        {
+            if (hooks == null) return;
+
+            bool gangIdSet = SetCompanionRecruitmentId(hooks, "_recruitGangId");
+            bool rosterIdSet = SetCompanionRecruitmentId(hooks, "_recruitRosterId");
+            if (!gangIdSet || !rosterIdSet)
+            {
+                Log.Write("WARNING: Could not force Companion recruitment IDs to player_faction. " +
+                    "GangId=" + gangIdSet + ", RosterId=" + rosterIdSet +
+                    ". Check the Companion extension version and its recruitment settings.");
+                return;
+            }
+
+            Log.Write("Companion recruitment destination pinned to player_faction for both gang and roster IDs.");
+        }
+
+        private static bool SetCompanionRecruitmentId(Type hooks, string memberName)
+        {
+            if (hooks == null || string.IsNullOrWhiteSpace(memberName)) return false;
+            const string desiredId = "player_faction";
+
+            try
+            {
+                FieldInfo field = hooks.GetField(memberName, StaticFlags);
+                if (field != null && field.IsStatic && field.FieldType == typeof(string))
+                {
+                    string current = Convert.ToString(field.GetValue(null));
+                    if (string.Equals(current, desiredId, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                    if (field.IsLiteral) return false;
+                    field.SetValue(null, desiredId);
+                    return string.Equals(Convert.ToString(field.GetValue(null)), desiredId, StringComparison.OrdinalIgnoreCase);
+                }
+
+                PropertyInfo property = hooks.GetProperty(memberName, StaticFlags);
+                MethodInfo getter = property != null ? property.GetGetMethod(true) : null;
+                MethodInfo setter = property != null ? property.GetSetMethod(true) : null;
+                if (property == null || property.PropertyType != typeof(string) ||
+                    getter == null || setter == null || !getter.IsStatic || !setter.IsStatic)
+                    return false;
+
+                string propertyValue = Convert.ToString(property.GetValue(null, null));
+                if (!string.Equals(propertyValue, desiredId, StringComparison.OrdinalIgnoreCase))
+                    property.SetValue(null, desiredId, null);
+                return string.Equals(Convert.ToString(property.GetValue(null, null)), desiredId, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Could not set Companion recruitment member " + memberName + ": " + Unwrap(ex));
+                return false;
+            }
+        }
+
         internal void TryInstallCompanionIntegrationPatches()
         {
             if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched &&
