@@ -38,6 +38,7 @@ namespace EnRAGEPlayerFactionExtension
         private int _promptGroup;
         private int _targetBlip;
         private int _nextSpawnAt;
+        private bool _spawnDelayInitialized;
         private int _nextProtectionAt;
         private int _nextRewardRetryAt;
         private bool _promptArmed = true;
@@ -78,6 +79,15 @@ namespace EnRAGEPlayerFactionExtension
             {
                 DeletePed();
                 return;
+            }
+
+            // Do not call enRAGE's SpawnPed twice in the same frame as the camp administrator.
+            // That NPC is maintained immediately before this one in PlayerFactionRuntime.Tick().
+            if ((_ped == null || !_ped.Exists()) && distanceToCamp <= 85f && !_spawnDelayInitialized)
+            {
+                _spawnDelayInitialized = true;
+                _nextSpawnAt = Game.GameTime + 2000;
+                Log.Write("Mission giver spawn delayed briefly to avoid two camp-NPC spawns in the same tick.");
             }
 
             if ((_ped == null || !_ped.Exists()) && distanceToCamp <= 85f && Game.GameTime >= _nextSpawnAt)
@@ -174,6 +184,8 @@ namespace EnRAGEPlayerFactionExtension
                 SaveFaction();
             }
             _promptArmed = true;
+            _spawnDelayInitialized = false;
+            _nextSpawnAt = 0;
         }
 
         private void ProtectPed(Ped player)
