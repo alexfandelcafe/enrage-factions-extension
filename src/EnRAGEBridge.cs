@@ -1400,6 +1400,57 @@ namespace EnRAGEPlayerFactionExtension
             return null;
         }
 
+        internal bool AwardMissionResources(PlayerFactionData data, int suppliesReward, int treasuryReward, out string error)
+        {
+            error = null;
+            if (!IsAvailable || data == null || !data.Founded || MainInstance == null)
+            {
+                error = "enRAGE o la facción del jugador todavía no están disponibles.";
+                return false;
+            }
+
+            try
+            {
+                IDictionary supplies = GetField(MainInstance, "SupplyMap") as IDictionary;
+                IDictionary treasury = GetField(MainInstance, "Treasury") as IDictionary;
+                if (supplies == null || treasury == null)
+                {
+                    error = "No se pudieron resolver los mapas nativos de suministros y tesorería.";
+                    return false;
+                }
+
+                int currentSupplies = supplies.Contains(data.Id) ? Convert.ToInt32(supplies[data.Id]) : 0;
+                int currentTreasury = treasury.Contains(data.Id) ? Convert.ToInt32(treasury[data.Id]) : 0;
+                int newSupplies = Math.Max(0, currentSupplies + Math.Max(0, suppliesReward));
+                int newTreasury = Math.Max(0, currentTreasury + Math.Max(0, treasuryReward));
+                supplies[data.Id] = newSupplies;
+                treasury[data.Id] = newTreasury;
+
+                try
+                {
+                    MethodInfo saveWorld = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                        m.Name == "SaveWorld" && m.GetParameters().Length == 0);
+                    if (saveWorld != null) saveWorld.Invoke(MainInstance, null);
+                }
+                catch (Exception ex) { Log.Write("SaveWorld after mission reward warning: " + Unwrap(ex)); }
+
+                data.CurrentSupplies = newSupplies;
+                data.CurrentTreasury = newTreasury;
+                data.ResourcesInitialized = true;
+                try { data.Save(); }
+                catch (Exception ex) { Log.Write("Mission reward mirror save warning: " + ex.Message); }
+                Log.Write("Mission reward applied to native faction resources: supplies +" + Math.Max(0, suppliesReward) +
+                    ", treasury +$" + Math.Max(0, treasuryReward) + ".");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = Unwrap(ex);
+                Log.Write("Mission reward failed: " + error);
+                return false;
+            }
+        }
+
         internal bool SyncFactionResources(PlayerFactionData data, out string error)
         {
             error = null;
@@ -2583,6 +2634,12 @@ namespace EnRAGEPlayerFactionExtension
             if (regard == null)
                 Log.Write("WARNING: NemesisMod.RegardOfRecord(NemesisRecord) not found; rank-based Hacia ti cannot be drawn.");
 
+            MethodInfo notorietyOf = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                m.Name == "NotorietyOf" && m.GetParameters().Length == 1 && m.ReturnType == typeof(int));
+            PatchIfFound(notorietyOf, nameof(FounderPatches.PlayerFactionMissionPrestigePostfix), false);
+            if (notorietyOf == null)
+                Log.Write("Mission prestige postfix unavailable: NotorietyOf(Gang) was not found.");
+
             if (_rosterMenuType != null)
             {
                 PatchIfFound(FindMethod(_rosterMenuType, "DetailActions", 0), nameof(FounderPatches.PlayerLeaderDetailActionsPostfix), false);
@@ -2984,6 +3041,19 @@ namespace EnRAGEPlayerFactionExtension
         internal static void PlayerFactionDrawBarPostfix(bool __state)
         {
             PlayerFactionPrestigeContext = false;
+        }
+
+        internal static void PlayerFactionMissionPrestigePostfix(object __0, ref int __result)
+        {
+            try
+            {
+                if (Runtime == null || __0 == null) return;
+                string gangId = Convert.ToString(ReadMember(__0, "Id"));
+                string playerFactionId = string.IsNullOrWhiteSpace(PlayerFactionId) ? "player_faction" : PlayerFactionId;
+                if (!string.Equals(gangId, playerFactionId, StringComparison.OrdinalIgnoreCase)) return;
+                __result = Math.Max(0, Math.Min(100, __result + Runtime.MissionPrestigeBonus));
+            }
+            catch (Exception ex) { Log.Write("Mission prestige postfix warning: " + ex.Message); }
         }
 
         internal static bool PlayerFactionPrestigeBandPrefix(object[] __args)
