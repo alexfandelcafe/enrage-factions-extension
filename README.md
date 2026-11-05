@@ -1,4 +1,4 @@
-# EnRAGE Player Faction Extension — v0.3.6
+# EnRAGE Player Faction Extension — v0.3.7
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
@@ -169,19 +169,20 @@ Las teclas efectivas dependen de la configuración de controles del juego y de C
 
 ### Encargado de misiones independientes
 
-Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. Su prompt **Pedir una misión** asigna un encargo independiente. Las misiones rotan después de cada finalización y no se puede iniciar otra mientras haya una activa:
+Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. El prompt **Pedir una misión** asigna uno de seis contratos. La selección es ponderada, evita repetir el último contrato completado y aumenta la dificultad cada cierto número de misiones.
 
-| Encargo | Objetivo | Recompensa |
+| Encargo | Objetivo | Recompensa base |
 |---|---|---|
-| **Reconocimiento de ruta** | Visitar un punto marcado y regresar al campamento. | +5 prestigio, +5 suministros y $25. |
-| **Patrulla de frontera** | Recorrer tres puntos de control, en orden, y regresar. | +8 prestigio, +8 suministros y $35. |
-| **Recuperar provisiones** | Encontrar el alijo, pulsar la tecla contextual junto al marcador y regresar. | +9 prestigio, +12 suministros y $20. |
-| **Vigilar el cruce** | Permanecer dentro del área señalada durante 18 segundos y regresar. El contador se pausa al salir de la zona. | +7 prestigio, +6 suministros y $30. |
-| **Entregar el despacho** | Llegar al punto de encuentro, pulsar la tecla contextual y regresar. | +8 prestigio, +5 suministros y $45. |
+| **Reconocimiento de ruta** | Visitar el punto marcado y regresar al campamento. | +5 prestigio, +5 suministros y $25. |
+| **Patrulla de frontera** | Recorrer tres puntos de control en orden y regresar. | +8 prestigio, +8 suministros y $35. |
+| **Recuperar provisiones** | Encontrar el alijo físico, recogerlo y regresar. | +9 prestigio, +12 suministros y $20. |
+| **Vigilar el cruce** | Permanecer dentro de la zona durante 18 segundos y regresar. | +7 prestigio, +6 suministros y $30. |
+| **Entregar el despacho** | Llegar al contacto fuera de escena, confirmar la entrega y regresar. | +8 prestigio, +5 suministros y $45. |
+| **Interceptar un convoy** | Enfrentarse a 2–4 escoltas armados, saquear la carreta y regresar. | +10 prestigio, +12 suministros y $60. |
 
-El alijo aparece como un cajón físico en el punto marcado. El encargo de despacho representa un contacto fuera de escena: se confirma al llegar al punto y pulsar la tecla contextual, sin generar un NPC temporal.
+La dificultad tiene tres niveles (**baja, media y alta**) y multiplica las recompensas base en un 30 % por nivel. En el asalto al convoy se genera una carreta con escoltas hostiles cerca del objetivo; el número de enemigos, su precisión y la munición aumentan con la dificultad. La escena solo se crea cerca del jugador, y los handles guardados se validan por modelo y posición antes de reutilizarse o limpiarse.
 
-Los objetivos y el progreso —incluidos el punto actual de la patrulla, la interacción del alijo/despacho y el tiempo acumulado de vigilancia— se guardan en `PlayerFaction.json`. Los encargos usan marcadores propios y no consumen `WorldEvent` ni `EncounterKind` de enRAGE. El prestigio de la misión se suma al valor que devuelve `NotorietyOf` para `player_faction`; los suministros y la tesorería se abonan en los mapas nativos de enRAGE.
+El catálogo de contratos, el controlador de entidades del objetivo y el encargado del campamento están separados en clases propias. Los objetivos usan el sprite **blip_objective**, en lugar de un icono de punto de interés. El progreso y la dificultad activa se guardan en PlayerFaction.json; el sistema sigue usando marcadores propios y no consume eventos de WorldEvent ni EncounterKind de enRAGE.
 
 ### Aislamiento de la facción del jugador
 

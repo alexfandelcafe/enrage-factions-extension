@@ -68,13 +68,20 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 39)] public int MissionsCompleted { get; set; }
         // Stable IDs that Companion's exact ped-to-roster cache has confirmed as actual recruits.
         [DataMember(Order = 40)] public List<string> ConfirmedRecruitIds { get; set; }
-        // 0 reconnaissance, 1 three-point patrol, 2 supply cache, 3 timed stakeout, 4 courier.
+        // Stable mission IDs: 0 reconnaissance, 1 patrol, 2 cache, 3 stakeout, 4 courier, 5 convoy.
         [DataMember(Order = 41)] public int MissionType { get; set; }
         [DataMember(Order = 42)] public int MissionObjectiveIndex { get; set; }
         [DataMember(Order = 43)] public bool MissionObjectiveReady { get; set; }
         [DataMember(Order = 44)] public int MissionWaitProgressMs { get; set; }
         // Runtime entity handle for the visible supply cache; verified against model and coordinates on reconnect.
         [DataMember(Order = 45)] public int MissionCachePropHandle { get; set; }
+        // Convoy handles are process-scoped and validated against model/location before reuse.
+        [DataMember(Order = 46)] public int MissionConvoyWagonHandle { get; set; }
+        [DataMember(Order = 47)] public List<int> MissionConvoyEnemyHandles { get; set; }
+        [DataMember(Order = 48)] public int MissionDifficulty { get; set; }
+        [DataMember(Order = 49)] public int LastMissionType { get; set; }
+        [DataMember(Order = 50)] public bool MissionEncounterSpawned { get; set; }
+        [DataMember(Order = 51)] public int MissionEncounterProcessId { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -115,6 +122,10 @@ namespace EnRAGEPlayerFactionExtension
                         data.UncountedRosterIds = new List<string>();
                     if (data.ConfirmedRecruitIds == null)
                         data.ConfirmedRecruitIds = new List<string>();
+                    if (data.MissionConvoyEnemyHandles == null)
+                        data.MissionConvoyEnemyHandles = new List<int>();
+                    if (data.SchemaVersion < 16)
+                        data.LastMissionType = -1;
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -124,7 +135,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(15, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(16, data.SchemaVersion);
                     return data;
                 }
             }
@@ -181,7 +192,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 15,
+                SchemaVersion = 16,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -205,6 +216,12 @@ namespace EnRAGEPlayerFactionExtension
                 MissionObjectiveReady = false,
                 MissionWaitProgressMs = 0,
                 MissionCachePropHandle = 0,
+                MissionConvoyWagonHandle = 0,
+                MissionConvoyEnemyHandles = new List<int>(),
+                MissionDifficulty = 0,
+                LastMissionType = -1,
+                MissionEncounterSpawned = false,
+                MissionEncounterProcessId = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
