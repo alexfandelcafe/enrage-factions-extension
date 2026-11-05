@@ -587,7 +587,6 @@ namespace EnRAGEPlayerFactionExtension
 
                 STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
                 Prop created = World.CreateProp(model, target, false, true);
-                model.MarkAsNoLongerNeeded();
                 if (created == null || !created.Exists())
                 {
                     Log.Write("Supply-cache prop could not be created at " + target + ".");
