@@ -91,7 +91,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 Vector3 pos = new Vector3(centre.X - 1.8f, centre.Y + 1.0f, centre.Z + 0.2f);
                 STREAMING.REQUEST_COLLISION_AT_COORD(pos.X, pos.Y, pos.Z);
-                Ped ped = _bridge.SpawnFounder("U_M_M_Rwfrancher_01", pos, 180f);
+                Ped ped = _bridge.SpawnFounder("U_M_M_RhdBartender_01", pos, 180f);
                 if (ped == null || !ped.Exists()) { Log.Write("Mission giver spawn failed."); return; }
                 _ped = ped; _bridge.MarkPedAsEnRageOwned(ped);
                 try { ENTITY.SET_ENTITY_INVINCIBLE(ped.Handle, true); } catch { }
