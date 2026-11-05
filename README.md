@@ -250,7 +250,7 @@ La pantalla lateral muestra hombres, suministros y tesorería sincronizados con 
 
 ## Prestigio y aspecto del campamento
 
-La barra de la facción muestra **PRESTIGIO** en lugar de **NOTORIEDAD**. Utiliza el valor nativo de enRAGE en la escala de 0 a 100; no reemplaza ni recalcula el sistema de notoriedad.
+La barra de la facción muestra **PRESTIGIO** en lugar de **NOTORIEDAD**. Desde v0.4.0, PRESTIGIO es un valor independiente de la extensión (0–100), guardado en `PlayerFaction.json`. En partidas antiguas se copia la notoriedad nativa una sola vez como migración; después no se vuelve a leer ni modificar notoriedad para calcular prestigio. La notoriedad de enRAGE conserva sus propios efectos y reglas.
 
 | Valor | Estado mostrado |
 |---:|---|
@@ -264,6 +264,15 @@ El mismo valor selecciona una de cinco configuraciones visuales de `CampKit.Camp
 
 La configuración visual se actualiza al cambiar de etapa. La reconstrucción física se difiere hasta que el jugador esté cerca y la colisión del terreno esté cargada; no se desmonta el campamento a distancia solo para cambiar su aspecto.
 
+## Encargado de misiones (experimental)
+
+La rama `feature/camp-mission-system` agrega un NPC de encargos independiente del administrador. Se crea cerca del campamento del jugador cuando la facción y el `CampSite` nativo están registrados; se elimina al alejarse y se vuelve a crear al regresar. Interactuar abre un tablero propio.
+
+El estado se guarda en `Missions.json` dentro de `scripts/EnRAGEPlayerFactionExtension`. Las recompensas de suministros y dinero se aplican mediante los métodos nativos de enRAGE `AddSupplies` y `AddPurse`; el prestigio se incrementa en la extensión y no llama a `AddNotoriety`.
+
+El tablero incluye contratos para carretas y depósitos de suministros, alijos urbanos, tesorerías, guaridas, trenes y bloqueos. La integración escucha `ChronicleDeed` y los métodos nativos de robo de tren y apertura de cajas fuertes. Los encargos solo progresan al observar un evento nativo compatible y la recompensa se reclama una sola vez.
+
+**Limitación de esta primera implementación:** la disponibilidad detecta si el subsistema nativo correspondiente existe, pero todavía no fuerza el inicio de un evento dedicado ni verifica todas las entidades/ubicaciones del mundo antes de ofrecer el contrato. Los eventos de suministros se distinguen por el texto del acontecimiento cuando enRAGE lo proporciona; los encargos que no emitan una etiqueta/título compatible pueden quedar sin progreso. No considerar esta función lista para una partida estable hasta compilarla contra la API instalada de ScriptHook y probar los siete tipos en juego.
 ## Territorio, recursos y opciones nativas
 
 ### Territorio
@@ -417,6 +426,7 @@ Ante un problema:
 
 ## Historial resumido
 
+- **v0.4.0 (rama experimental):** NPC independiente de misiones, persistencia de encargos/recompensas, hooks de ChronicleDeed y prestigio independiente de notoriedad. Requiere prueba en juego y la disponibilidad aún no fuerza eventos dedicados.
 - **v0.3.6:** aspecto del campamento por prestigio en cinco etapas; vida de campamento con escenarios y conversaciones ambientales; defensa reactiva; sincronización de roster y recursos; prevención de falsos campamentos enemigos.
 - **v0.3.5:** recuperación de registros Companion, materialización de miembros faltantes por ID persistente, línea base de fuerza inicial y ajustes nativos de facción.
 - **v0.3.4:** recuperación tras recargar scripts, barra PRESTIGIO, acciones de ascenso/degradación y relación «HACIA TI» por rango.
