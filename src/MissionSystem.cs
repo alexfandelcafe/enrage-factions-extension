@@ -30,21 +30,23 @@ namespace EnRAGEPlayerFactionExtension
         internal MissionKind Kind;
     }
 
+    [System.Runtime.Serialization.DataContract]
     internal sealed class MissionRecord
     {
-        public string Id { get; set; }
-        public int Progress { get; set; }
-        public bool Accepted { get; set; }
-        public bool Completed { get; set; }
-        public bool RewardClaimed { get; set; }
-        public string LastEventKey { get; set; }
+        [System.Runtime.Serialization.DataMember] public string Id { get; set; }
+        [System.Runtime.Serialization.DataMember] public int Progress { get; set; }
+        [System.Runtime.Serialization.DataMember] public bool Accepted { get; set; }
+        [System.Runtime.Serialization.DataMember] public bool Completed { get; set; }
+        [System.Runtime.Serialization.DataMember] public bool RewardClaimed { get; set; }
+        [System.Runtime.Serialization.DataMember] public string LastEventKey { get; set; }
     }
 
+    [System.Runtime.Serialization.DataContract]
     internal sealed class MissionSaveData
     {
-        public List<MissionRecord> Records { get; set; }
-        public int Prestige { get; set; }
-        public bool PrestigeInitialized { get; set; }
+        [System.Runtime.Serialization.DataMember] public List<MissionRecord> Records { get; set; }
+        [System.Runtime.Serialization.DataMember] public int Prestige { get; set; }
+        [System.Runtime.Serialization.DataMember] public bool PrestigeInitialized { get; set; }
 
         internal void Normalize()
         {
@@ -95,7 +97,6 @@ namespace EnRAGEPlayerFactionExtension
         internal void RefreshAvailability()
         {
             if (!_bridge.IsAvailable) { _available.Clear(); return; }
-            if (DateTime.UtcNow.Ticks < _lastAvailabilityCheck) _lastAvailabilityCheck = 0;
             // Availability is intentionally conservative: the corresponding native subsystem and
             // ChronicleDeed hook must exist. Event-specific runtime validation is done again when
             // the native event is observed; the extension never fabricates a successful event.
@@ -330,12 +331,16 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Mission ChronicleDeed hook install failed: " + ex); }
         }
 
-        private static void Postfix(string tag, string title, string place, object pos, string gangId)
+        private static void Postfix(object[] __args)
         {
             try
             {
                 MissionManager manager = Manager;
-                if (manager == null) return;
+                if (manager == null || __args == null || __args.Length < 5) return;
+                string tag = Convert.ToString(__args[0]);
+                string title = Convert.ToString(__args[1]);
+                string place = Convert.ToString(__args[2]);
+                string gangId = Convert.ToString(__args[4]);
                 string key = tag + "|" + title + "|" + place + "|" + gangId + "|" + Environment.TickCount;
                 manager.ObserveChronicleEvent(tag, title, place, gangId, key);
             }
