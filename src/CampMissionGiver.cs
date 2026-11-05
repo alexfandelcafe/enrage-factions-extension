@@ -27,9 +27,13 @@ namespace EnRAGEPlayerFactionExtension
         private const uint NativeMapBlipStyle = 2339406903U;
         private const string PedModel = "U_M_M_RhdBartender_01";
         private const string TargetSprite = "blip_poi";
-        private const int MissionSuppliesReward = 5;
-        private const int MissionTreasuryReward = 25;
-        private const int MissionPrestigeReward = 5;
+        private const int MissionReconnaissance = 0;
+        private const int MissionPatrol = 1;
+        private const int MissionSupplyCache = 2;
+        private const int MissionStakeout = 3;
+        private const int MissionCourier = 4;
+        private const int PatrolWaypointCount = 3;
+        private const int StakeoutDurationMs = 18000;
 
         private readonly EnRAGEBridge _bridge;
         private readonly PlayerFactionData _faction;
@@ -41,6 +45,9 @@ namespace EnRAGEPlayerFactionExtension
         private bool _spawnDelayInitialized;
         private int _nextProtectionAt;
         private int _nextRewardRetryAt;
+        private int _lastMissionProgressTickAt;
+        private int _nextMissionProgressSaveAt;
+        private bool _missionTimerInitialized;
         private bool _promptArmed = true;
 
         internal CampMissionGiver(EnRAGEBridge bridge, PlayerFactionData faction)
@@ -368,24 +375,76 @@ namespace EnRAGEPlayerFactionExtension
             method.Invoke(null, converted);
         }
 
-        private unsafe void OnInteract()
+        private void OnInteract()
         {
             if (_faction.MissionStage > 0)
             {
-                if (_faction.MissionStage == 1)
-                    Notify("MISIÓN ACTIVA: inspecciona el punto marcado en el mapa y vuelve al campamento.");
+                string status;
+                if (_faction.MissionStage == 2)
+                    status = "Vuelve al campamento para entregar el encargo.";
+                else if (_faction.MissionStage == 3)
+                    status = "La recompensa está pendiente; se entregará cuando los recursos de la facción estén disponibles.";
+                else if (_faction.MissionObjectiveReady && (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionCourier))
+                    status = _faction.MissionType == MissionSupplyCache
+                        ? "Estás junto al alijo. Pulsa la tecla contextual para recoger las provisiones."
+                        : "Has llegado al punto de encuentro. Pulsa la tecla contextual para entregar el despacho.";
+                else if (_faction.MissionType == MissionStakeout)
+                    status = "Vigila el cruce durante 18 segundos. El tiempo solo cuenta mientras permanezcas dentro del área marcada.";
+                else if (_faction.MissionType == MissionPatrol)
+                    status = "Patrulla activa: visita el punto " + (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + " y continúa con los siguientes.";
                 else
-                    Notify("MISIÓN ACTIVA: vuelve al campamento para entregar el informe.");
+                    status = "Inspecciona el punto marcado en el mapa y vuelve al campamento.";
+                Notify("MISIÓN ACTIVA: " + status);
                 return;
             }
 
             Vector3 centre = _bridge.GetPlayerCampCentre(_faction);
-            double angle = (_faction.MissionsCompleted + 1) * 2.399963229728653;
+            if (centre == Vector3.Zero)
+                centre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
+            if (centre == Vector3.Zero)
+            {
+                Notify("No se pudo localizar el centro del campamento para asignar una misión.");
+                return;
+            }
+
+            // The list rotates only after a completed contract. An active mission is never replaced.
+            _faction.MissionType = _faction.MissionsCompleted % 5;
+            _faction.MissionObjectiveIndex = 0;
+            _faction.MissionObjectiveReady = false;
+            _faction.MissionWaitProgressMs = 0;
+            _missionTimerInitialized = false;
+            _lastMissionProgressTickAt = 0;
+            SetMissionTarget(centre, 0);
+            _faction.MissionStage = 1;
+            SaveFaction();
+            EnsureTargetBlip();
+
+            int suppliesReward, treasuryReward, prestigeReward;
+            GetMissionReward(_faction.MissionType, out suppliesReward, out treasuryReward, out prestigeReward);
+            Notify("Nuevo encargo: " + GetMissionTitle(_faction.MissionType) + ". " +
+                GetMissionStartInstruction(_faction.MissionType) + " Recompensa: +" + prestigeReward +
+                " prestigio, +" + suppliesReward + " suministros y $" + treasuryReward + " para la tesorería.");
+        }
+
+        private unsafe void SetMissionTarget(Vector3 centre, int pointIndex)
+        {
+            double baseAngle = (_faction.MissionsCompleted + 1) * 2.399963229728653 +
+                _faction.MissionType * 0.731;
+            double angle = baseAngle;
+            if (_faction.MissionType == MissionPatrol)
+                angle += pointIndex * (Math.PI * 2.0 / PatrolWaypointCount);
+
+            float radius = _faction.MissionType == MissionStakeout
+                ? 235f
+                : (_faction.MissionType == MissionPatrol ? 285f : 260f);
+            radius += ((_faction.MissionsCompleted + pointIndex) % 3) * 18f;
+
             Vector3 target = new Vector3(
-                centre.X + (float)Math.Cos(angle) * 260f,
-                centre.Y + (float)Math.Sin(angle) * 260f,
+                centre.X + (float)Math.Cos(angle) * radius,
+                centre.Y + (float)Math.Sin(angle) * radius,
                 centre.Z + 0.35f);
             STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
+
             float groundZ = 0f;
             try
             {
@@ -398,10 +457,70 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionTargetX = target.X;
             _faction.MissionTargetY = target.Y;
             _faction.MissionTargetZ = target.Z;
-            _faction.MissionStage = 1;
-            SaveFaction();
-            EnsureTargetBlip();
-            Notify("Nueva misión: Reconocimiento de ruta. Visita el punto marcado y vuelve. Recompensa: +5 prestigio, +5 suministros y $25 para la tesorería.");
+        }
+
+        private static string GetMissionTitle(int missionType)
+        {
+            switch (missionType)
+            {
+                case MissionPatrol: return "Patrulla de frontera";
+                case MissionSupplyCache: return "Recuperar provisiones";
+                case MissionStakeout: return "Vigilar el cruce";
+                case MissionCourier: return "Entregar el despacho";
+                default: return "Reconocimiento de ruta";
+            }
+        }
+
+        private static string GetMissionStartInstruction(int missionType)
+        {
+            switch (missionType)
+            {
+                case MissionPatrol: return "Recorre los tres puntos marcados en orden y regresa al campamento.";
+                case MissionSupplyCache: return "Encuentra el alijo, pulsa la tecla contextual para recogerlo y vuelve al campamento.";
+                case MissionStakeout: return "Llega al cruce y permanece dentro del área marcada durante 18 segundos; después regresa.";
+                case MissionCourier: return "Llega al punto de encuentro, pulsa la tecla contextual para entregar el despacho y vuelve.";
+                default: return "Visita el punto marcado y regresa al campamento.";
+            }
+        }
+
+        private static string GetMissionObjectiveBlipName(PlayerFactionData faction)
+        {
+            if (faction == null) return "Objetivo de misión";
+            switch (faction.MissionType)
+            {
+                case MissionPatrol:
+                    return "Patrulla: punto " + (faction.MissionObjectiveIndex + 1) + "/" + PatrolWaypointCount;
+                case MissionSupplyCache:
+                    return "Alijo de provisiones";
+                case MissionStakeout:
+                    return "Cruce de vigilancia";
+                case MissionCourier:
+                    return "Punto de entrega";
+                default:
+                    return "Reconocimiento de ruta";
+            }
+        }
+
+        private static void GetMissionReward(int missionType, out int supplies, out int treasury, out int prestige)
+        {
+            switch (missionType)
+            {
+                case MissionPatrol:
+                    supplies = 8; treasury = 35; prestige = 8;
+                    break;
+                case MissionSupplyCache:
+                    supplies = 12; treasury = 20; prestige = 9;
+                    break;
+                case MissionStakeout:
+                    supplies = 6; treasury = 30; prestige = 7;
+                    break;
+                case MissionCourier:
+                    supplies = 5; treasury = 45; prestige = 8;
+                    break;
+                default:
+                    supplies = 5; treasury = 25; prestige = 5;
+                    break;
+            }
         }
 
         private void UpdateMissionProgress(Ped player, Vector3 campCentre)
@@ -409,13 +528,83 @@ namespace EnRAGEPlayerFactionExtension
             if (_faction.MissionStage == 1)
             {
                 Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
-                if (player.Position.DistanceTo(target) <= 24f)
+                float distance = player.Position.DistanceTo(target);
+
+                if (_faction.MissionType == MissionPatrol)
                 {
-                    _faction.MissionStage = 2;
-                    SaveFaction();
-                    RemoveTargetBlip();
-                    EnsureTargetBlip();
-                    Notify("Punto inspeccionado. Vuelve al campamento para entregar el informe.");
+                    if (distance <= 24f)
+                    {
+                        if (_faction.MissionObjectiveIndex + 1 < PatrolWaypointCount)
+                        {
+                            _faction.MissionObjectiveIndex++;
+                            SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
+                            SaveFaction();
+                            RemoveTargetBlip();
+                            EnsureTargetBlip();
+                            Notify("Punto de patrulla inspeccionado. Continúa hacia el punto " +
+                                (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + ".");
+                        }
+                        else
+                        {
+                            AdvanceMissionToReturn("Has completado la patrulla de frontera.");
+                        }
+                    }
+                }
+                else if (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionCourier)
+                {
+                    if (distance <= 5f)
+                    {
+                        if (!_faction.MissionObjectiveReady)
+                        {
+                            _faction.MissionObjectiveReady = true;
+                            SaveFaction();
+                            Notify(_faction.MissionType == MissionSupplyCache
+                                ? "Has encontrado el alijo. Pulsa la tecla contextual para recoger las provisiones."
+                                : "Has llegado al punto de encuentro. Pulsa la tecla contextual para entregar el despacho.");
+                        }
+                        else if (JustPressed(ContextControl))
+                        {
+                            AdvanceMissionToReturn(_faction.MissionType == MissionSupplyCache
+                                ? "Has recogido las provisiones."
+                                : "El despacho ha sido entregado.");
+                        }
+                    }
+                }
+                else if (_faction.MissionType == MissionStakeout)
+                {
+                    int now = Game.GameTime;
+                    if (!_missionTimerInitialized)
+                    {
+                        _lastMissionProgressTickAt = now;
+                        _missionTimerInitialized = true;
+                    }
+                    else
+                    {
+                        int elapsed = now - _lastMissionProgressTickAt;
+                        if (distance <= 20f && elapsed > 0 && elapsed < 1000)
+                            _faction.MissionWaitProgressMs = Math.Min(StakeoutDurationMs, _faction.MissionWaitProgressMs + elapsed);
+                        _lastMissionProgressTickAt = now;
+                    }
+
+                    if (distance <= 20f && !_faction.MissionObjectiveReady)
+                    {
+                        _faction.MissionObjectiveReady = true;
+                        SaveFaction();
+                        Notify("Estás en posición. Mantente dentro del área durante 18 segundos para completar la vigilancia.");
+                    }
+
+                    if (now >= _nextMissionProgressSaveAt)
+                    {
+                        _nextMissionProgressSaveAt = now + 3000;
+                        SaveFaction();
+                    }
+
+                    if (_faction.MissionWaitProgressMs >= StakeoutDurationMs)
+                        AdvanceMissionToReturn("Has vigilado el cruce durante el tiempo requerido.");
+                }
+                else if (distance <= 24f)
+                {
+                    AdvanceMissionToReturn("Punto de reconocimiento inspeccionado.");
                 }
             }
 
@@ -429,28 +618,50 @@ namespace EnRAGEPlayerFactionExtension
                 CompleteMission();
         }
 
+        private void AdvanceMissionToReturn(string message)
+        {
+            _faction.MissionStage = 2;
+            _faction.MissionObjectiveReady = false;
+            _faction.MissionWaitProgressMs = 0;
+            _missionTimerInitialized = false;
+            _lastMissionProgressTickAt = 0;
+            SaveFaction();
+            RemoveTargetBlip();
+            EnsureTargetBlip();
+            Notify(message + " Regresa al campamento para cobrar la recompensa.");
+        }
+
         private void CompleteMission()
         {
             _nextRewardRetryAt = Game.GameTime + 5000;
+            int suppliesReward, treasuryReward, prestigeReward;
+            GetMissionReward(_faction.MissionType, out suppliesReward, out treasuryReward, out prestigeReward);
+
             string error;
-            if (!_bridge.AwardMissionResources(_faction, MissionSuppliesReward, MissionTreasuryReward, out error))
+            if (!_bridge.AwardMissionResources(_faction, suppliesReward, treasuryReward, out error))
             {
                 Log.Write("Mission reward pending; native faction resources unavailable: " + error);
                 return;
             }
 
-            _faction.MissionPrestige = Math.Min(100, _faction.MissionPrestige + MissionPrestigeReward);
+            string completedName = GetMissionTitle(_faction.MissionType);
+            _faction.MissionPrestige = Math.Min(100, _faction.MissionPrestige + prestigeReward);
             _faction.MissionsCompleted++;
             _faction.MissionStage = 0;
+            _faction.MissionType = MissionReconnaissance;
+            _faction.MissionObjectiveIndex = 0;
+            _faction.MissionObjectiveReady = false;
+            _faction.MissionWaitProgressMs = 0;
             _faction.MissionTargetX = 0f;
             _faction.MissionTargetY = 0f;
             _faction.MissionTargetZ = 0f;
             SaveFaction();
             RemoveTargetBlip();
-            Notify("Misión completada: +5 prestigio, +5 suministros y $25 añadidos a la tesorería de la facción.");
-            Log.Write("Independent mission completed. Count=" + _faction.MissionsCompleted +
-                ", mission prestige=" + _faction.MissionPrestige + ", resources=+" + MissionSuppliesReward +
-                " supplies/+$" + MissionTreasuryReward + ".");
+            Notify("Misión completada: " + completedName + ". +" + prestigeReward + " prestigio, +" +
+                suppliesReward + " suministros y $" + treasuryReward + " añadidos a la tesorería de la facción.");
+            Log.Write("Independent mission completed: " + completedName + ". Count=" + _faction.MissionsCompleted +
+                ", mission prestige=" + _faction.MissionPrestige + ", resources=+" + suppliesReward +
+                " supplies/+$" + treasuryReward + ".");
         }
 
         private void EnsureTargetBlip()
@@ -471,7 +682,9 @@ namespace EnRAGEPlayerFactionExtension
                 if (_targetBlip != 0)
                 {
                     MAP.SET_BLIP_SPRITE(_targetBlip, MISC.GET_HASH_KEY(TargetSprite), true);
-                    SetBlipName(_targetBlip, _faction.MissionStage == 1 ? "Reconocimiento de ruta" : "Volver al campamento");
+                    SetBlipName(_targetBlip, _faction.MissionStage == 1
+                        ? GetMissionObjectiveBlipName(_faction)
+                        : "Volver al campamento");
                 }
             }
             catch (Exception ex) { Log.Write("Mission objective blip creation failed: " + ex.Message); }
