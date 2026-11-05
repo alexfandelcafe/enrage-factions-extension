@@ -182,17 +182,40 @@ namespace EnRAGEPlayerFactionExtension
             else Save();
         }
 
+        internal void ObserveNativeActivity(MissionKind kind, string eventKey)
+        {
+            if (!_faction.Founded) return;
+            MissionRecord active = _save.Records.FirstOrDefault(r => r.Accepted && !r.Completed && !r.RewardClaimed);
+            if (active == null) return;
+            MissionDefinition definition = FindDefinition(active.Id);
+            if (definition == null || definition.Kind != kind) return;
+            if (!string.IsNullOrWhiteSpace(eventKey) && string.Equals(active.LastEventKey, eventKey, StringComparison.Ordinal)) return;
+            active.LastEventKey = eventKey ?? (kind.ToString() + "|" + Environment.TickCount);
+            active.Progress = Math.Min(definition.RequiredEvents, active.Progress + 1);
+            if (active.Progress >= definition.RequiredEvents)
+            {
+                active.Completed = true;
+                active.Accepted = false;
+                Save();
+                if (_notify != null) _notify("Encargo completado: " + definition.Title + ". Volvé al encargado para cobrar.");
+            }
+            else Save();
+        }
+
         private static bool TagMatches(MissionDefinition definition, string tag, string title)
         {
             string normalized = (tag + " " + (title ?? string.Empty)).ToLowerInvariant();
             switch (definition.Kind)
             {
                 case MissionKind.SupplyWagon:
-                    return normalized.Contains("supply") || normalized.Contains("wagon") || normalized.Contains("carreta");
+                    return normalized.Contains("wagon") || normalized.Contains("carreta");
                 case MissionKind.SupplyCache:
-                    return normalized.Contains("suppl") || normalized.Contains("cache") || normalized.Contains("suministro");
+                    return normalized.Contains("cache") || normalized.Contains("depósito") || normalized.Contains("deposit") ||
+                           (string.Equals(tag, "supplies", StringComparison.OrdinalIgnoreCase) &&
+                            !normalized.Contains("wagon") && !normalized.Contains("carreta") &&
+                            !normalized.Contains("crate") && !normalized.Contains("stash") && !normalized.Contains("caja"));
                 case MissionKind.TownStash:
-                    return normalized.Contains("suppl") || normalized.Contains("crate") || normalized.Contains("stash") || normalized.Contains("caja");
+                    return normalized.Contains("crate") || normalized.Contains("stash") || normalized.Contains("caja") || normalized.Contains("alijo");
                 case MissionKind.EnemyTreasury:
                     return normalized.Contains("treasury") || normalized.Contains("strongbox") || normalized.Contains("tesorer");
                 case MissionKind.EnemyCamp:
@@ -326,9 +349,44 @@ namespace EnRAGEPlayerFactionExtension
                 if (Harmony.GetPatchInfo(target) != null &&
                     Harmony.GetPatchInfo(target).Owners.Contains("enrage.playerfaction.missions")) return;
                 Harmony.Patch(target, postfix: new HarmonyMethod(postfix));
-                Log.Write("Mission ChronicleDeed hook installed.");
+                PatchActivityMethod(type, "TrainRobbed", MissionKind.TrainRobbery);
+                PatchActivityMethod(type, "OpenStrongbox", MissionKind.EnemyTreasury);
+                Log.Write("Mission ChronicleDeed and native activity hooks installed.");
             }
             catch (Exception ex) { Log.Write("Mission ChronicleDeed hook install failed: " + ex); }
+        }
+
+        private static void PatchActivityMethod(Type type, string name, MissionKind kind)
+        {
+            foreach (MethodInfo method in type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                .Where(m => m.Name == name))
+            {
+                try
+                {
+                    var info = Harmony.GetPatchInfo(method);
+                    if (info != null && info.Owners.Contains("enrage.playerfaction.missions")) continue;
+                    MethodInfo postfix = typeof(MissionChroniclePatch).GetMethod(nameof(ActivityPostfix), BindingFlags.Static | BindingFlags.NonPublic);
+                    Harmony.Patch(method, postfix: new HarmonyMethod(postfix));
+                    Log.Write("Mission native activity hook installed: " + name + " (" + kind + ").");
+                }
+                catch (Exception ex) { Log.Write("Mission activity hook failed for " + name + ": " + ex.Message); }
+            }
+        }
+
+        private static void ActivityPostfix(MethodBase __originalMethod, object[] __args)
+        {
+            try
+            {
+                MissionManager manager = Manager;
+                if (manager == null || __originalMethod == null) return;
+                MissionKind kind;
+                if (__originalMethod.Name == "TrainRobbed") kind = MissionKind.TrainRobbery;
+                else if (__originalMethod.Name == "OpenStrongbox") kind = MissionKind.EnemyTreasury;
+                else return;
+                string key = __originalMethod.Name + "|" + Environment.TickCount + "|" + (__args == null ? 0 : __args.Length);
+                manager.ObserveNativeActivity(kind, key);
+            }
+            catch (Exception ex) { Log.Write("Mission native activity callback warning: " + ex.Message); }
         }
 
         private static void Postfix(object[] __args)
