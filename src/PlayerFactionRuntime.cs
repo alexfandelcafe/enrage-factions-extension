@@ -107,6 +107,7 @@ namespace EnRAGEPlayerFactionExtension
         private bool _factionRegistered;
         private bool _factionMenuOpen;
         private int _nextCampVisualSyncAt;
+        private int _nextPrestigeMigrationAt;
         private int _nextCampDefenceScanAt;
         private int _nextCampConversationAt;
         private int _pendingCampInitiatorHandle;
@@ -250,8 +251,9 @@ namespace EnRAGEPlayerFactionExtension
             _bridge.NormalizeCompanionPlayerFactionRoster();
             MissionChroniclePatch.Manager = _missionManager;
             MissionChroniclePatch.Install(_bridge.MainInstance);
-            if (!_faction.PrestigeInitialized)
+            if (!_faction.PrestigeInitialized && _factionRegistered && Game.GameTime >= _nextPrestigeMigrationAt)
             {
+                _nextPrestigeMigrationAt = Game.GameTime + 1500;
                 string prestigeMigrationError;
                 _bridge.InitializeIndependentPrestige(_faction, out prestigeMigrationError);
                 if (!string.IsNullOrWhiteSpace(prestigeMigrationError)) Log.Write("Prestige migration pending: " + prestigeMigrationError);
