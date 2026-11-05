@@ -476,16 +476,35 @@ namespace EnRAGEPlayerFactionExtension
                 centre.X + (float)Math.Cos(angle) * radius,
                 centre.Y + (float)Math.Sin(angle) * radius,
                 centre.Z + 0.35f);
-            STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
 
-            float groundZ = 0f;
-            try
+            // Try several nearby bearings and radii instead of blindly accepting one arbitrary point.
+            // Only accept a candidate for which the ground native returns a plausible height.
+            bool foundGround = false;
+            for (int attempt = 0; attempt < 8; attempt++)
             {
-                if (MISC.GET_GROUND_Z_FOR_3D_COORD(target.X, target.Y, centre.Z + 35f, &groundZ, false) &&
-                    Math.Abs(groundZ - centre.Z) <= 45f)
-                    target.Z = groundZ + 0.25f;
+                double candidateAngle = angle + attempt * (Math.PI / 4.0);
+                float candidateRadius = radius + (attempt % 3) * 14f;
+                Vector3 candidate = new Vector3(
+                    centre.X + (float)Math.Cos(candidateAngle) * candidateRadius,
+                    centre.Y + (float)Math.Sin(candidateAngle) * candidateRadius,
+                    centre.Z + 0.35f);
+                STREAMING.REQUEST_COLLISION_AT_COORD(candidate.X, candidate.Y, candidate.Z);
+                float groundZ = 0f;
+                try
+                {
+                    if (MISC.GET_GROUND_Z_FOR_3D_COORD(candidate.X, candidate.Y, centre.Z + 50f, &groundZ, false) &&
+                        Math.Abs(groundZ - centre.Z) <= 55f)
+                    {
+                        candidate.Z = groundZ + 0.25f;
+                        target = candidate;
+                        foundGround = true;
+                        break;
+                    }
+                }
+                catch { }
             }
-            catch { }
+            if (!foundGround)
+                STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
 
             _faction.MissionTargetX = target.X;
             _faction.MissionTargetY = target.Y;

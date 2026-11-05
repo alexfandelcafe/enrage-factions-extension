@@ -117,8 +117,10 @@ namespace EnRAGEPlayerFactionExtension
                 if (!model.IsLoaded && !model.Request(1500)) { Log.Write("Convoy wagon model did not load: " + ConvoyWagonModel + "."); return; }
                 double angle = (_faction.MissionsCompleted + 1) * 1.17;
                 Vector3 position = new Vector3(target.X + (float)Math.Cos(angle) * 4.5f, target.Y + (float)Math.Sin(angle) * 4.5f, target.Z + 0.25f);
-                Vehicle wagon = World.CreateVehicle(model, position, (float)((angle * 180.0 / Math.PI + 90.0) % 360.0));
+                VehicleHash wagonHash = (VehicleHash)Enum.ToObject(typeof(VehicleHash), MISC.GET_HASH_KEY(ConvoyWagonModel));
+                Vehicle wagon = World.CreateVehicle(wagonHash, position, (float)((angle * 180.0 / Math.PI + 90.0) % 360.0));
                 if (wagon == null || !wagon.Exists()) { Log.Write("Convoy wagon could not be created at " + position + "."); return; }
+                ENTITY.SET_ENTITY_AS_MISSION_ENTITY(wagon.Handle, true, true);
                 _faction.MissionConvoyWagonHandle = wagon.Handle;
                 SaveFaction();
             }
@@ -143,6 +145,7 @@ namespace EnRAGEPlayerFactionExtension
                     if (!model.IsLoaded && !model.Request(1500)) { Log.Write("Convoy guard model did not load: " + modelName + "."); continue; }
                     Ped guard = World.CreatePed(pedHash, position, (float)((angle * 180.0 / Math.PI + 180.0) % 360.0));
                     if (guard == null || !guard.Exists()) continue;
+                    ENTITY.SET_ENTITY_AS_MISSION_ENTITY(guard.Handle, true, true);
                     guard.Accuracy = 20 + _faction.MissionDifficulty * 12;
                     guard.Weapons.Give(WeaponHash.RevolverCattleman, 36 + _faction.MissionDifficulty * 18, true, true);
                     guard.Task.FightAgainst(player);
