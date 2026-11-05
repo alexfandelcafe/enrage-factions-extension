@@ -621,8 +621,9 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     uint expectedModel = MISC.GET_HASH_KEY(SupplyCacheModel);
                     Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
-                    bool belongsToMission = unchecked((uint)candidate.Model.Hash) == expectedModel &&
-                        (target == Vector3.Zero || candidate.Position.DistanceTo(target) <= 12f);
+                    bool belongsToMission = target != Vector3.Zero &&
+                        unchecked((uint)candidate.Model.Hash) == expectedModel &&
+                        candidate.Position.DistanceTo(target) <= 12f;
                     if (belongsToMission) candidate.Delete();
                 }
                 catch (Exception ex) { Log.Write("Supply-cache prop cleanup warning: " + ex.Message); }
