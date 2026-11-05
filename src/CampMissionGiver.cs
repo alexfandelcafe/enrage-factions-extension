@@ -414,6 +414,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionWaitProgressMs = 0;
             _missionTimerInitialized = false;
             _lastMissionProgressTickAt = 0;
+            _nextMissionProgressSaveAt = 0;
             SetMissionTarget(centre, 0);
             _faction.MissionStage = 1;
             SaveFaction();
