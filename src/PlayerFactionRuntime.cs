@@ -60,6 +60,7 @@ namespace EnRAGEPlayerFactionExtension
 
         private readonly ExtensionConfig _config;
         private readonly EnRAGEBridge _bridge;
+        private readonly CampMissionGiver _missionGiver;
         private PlayerFactionData _faction;
         private Ped _founder;
         private int _founderBlip;
@@ -205,6 +206,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 _faction.CampRosterPedHandles.Clear();
                 _faction.CampManagerPedHandle = 0;
+                _faction.MissionGiverPedHandle = 0;
                 _faction.CampRosterPedProcessId = currentProcessId;
                 try { _faction.Save(); }
                 catch (Exception ex) { Log.Write("Could not persist process-scoped camp ped handles: " + ex.Message); }
@@ -212,6 +214,7 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             _bridge = new EnRAGEBridge();
+            _missionGiver = new CampMissionGiver(_bridge, _faction);
             FounderPatches.Runtime = this;
             // Native blip handles are removed on the first game tick, not in the constructor.
             // The previous behavior could run before the map/UI native state was ready.
@@ -372,6 +375,7 @@ namespace EnRAGEPlayerFactionExtension
                 if (_factionRegistered && campPlayer != null && campPlayer.Exists() && !campPlayer.IsDead)
                 {
                     MaintainCampManager(campPlayer);
+                    _missionGiver.Maintain(campPlayer, _factionMenuOpen || _keyboardOpen || _campSelectionActive || _campTeleportPending);
                     MaintainCampDefence(campPlayer);
                     MaintainCampAmbientConversation(campPlayer);
                 }
@@ -425,6 +429,7 @@ namespace EnRAGEPlayerFactionExtension
             _campTeleportPending = false;
             try { SetPromptVisible(_founderPrompt, false); } catch { }
             try { SetPromptVisible(_campManagerPrompt, false); } catch { }
+            try { _missionGiver.OnScriptAborted(); } catch (Exception ex) { Log.Write("Mission giver abort cleanup warning: " + ex.Message); }
             RemoveCampManagerPrompt();
             RemovePrompt();
             bool ownsSharedHooks = object.ReferenceEquals(FounderPatches.Runtime, this);
@@ -445,6 +450,11 @@ namespace EnRAGEPlayerFactionExtension
             Log.Write("Script-aborted cleanup complete: both interaction prompts released; " +
                 (ownsSharedHooks ? "extension Harmony hooks uninstalled" : "newer runtime owns shared hooks") +
                 "; camp NPC and saved blips left intact.");
+        }
+
+        internal int MissionPrestigeBonus
+        {
+            get { return Math.Max(0, Math.Min(100, _faction.MissionPrestige)); }
         }
 
         internal void ChangePlayerFactionMemberRank(object record, int delta)
