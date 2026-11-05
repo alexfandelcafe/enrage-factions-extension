@@ -68,6 +68,11 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 39)] public int MissionsCompleted { get; set; }
         // Stable IDs that Companion's exact ped-to-roster cache has confirmed as actual recruits.
         [DataMember(Order = 40)] public List<string> ConfirmedRecruitIds { get; set; }
+        // 0 reconnaissance, 1 three-point patrol, 2 supply cache, 3 timed stakeout, 4 courier.
+        [DataMember(Order = 41)] public int MissionType { get; set; }
+        [DataMember(Order = 42)] public int MissionObjectiveIndex { get; set; }
+        [DataMember(Order = 43)] public bool MissionObjectiveReady { get; set; }
+        [DataMember(Order = 44)] public int MissionWaitProgressMs { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -117,7 +122,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(13, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(14, data.SchemaVersion);
                     return data;
                 }
             }
@@ -174,7 +179,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 13,
+                SchemaVersion = 14,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -193,6 +198,10 @@ namespace EnRAGEPlayerFactionExtension
                 MissionTargetZ = 0f,
                 MissionPrestige = 0,
                 MissionsCompleted = 0,
+                MissionType = 0,
+                MissionObjectiveIndex = 0,
+                MissionObjectiveReady = false,
+                MissionWaitProgressMs = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
