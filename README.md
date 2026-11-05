@@ -31,6 +31,7 @@ Una vez fundada, la banda dispone de:
 - Integración con el roster y, cuando está instalada, con **EnRAGECompanionsExtension** para reclutas, órdenes de seguimiento, relaciones y recuperación de personajes.
 - Miembros que regresan al campamento cuando dejan de seguir al jugador, buscan actividades de campamento y mantienen conversaciones ambientales entre ellos.
 - Defensa reactiva del campamento frente a NPCs que estén atacando directamente al jugador, a un residente o al administrador.
+- Un segundo NPC, distinto del administrador, aparece cerca del campamento y ofrece misiones propias de la extensión, sin depender de los eventos de enRAGE.
 - Recuperación de datos y del campamento después de recargar los scripts.
 
 La extensión se conecta a enRAGE mediante Reflection y Harmony. No necesita una referencia de compilación a `NemesisMod.dll`; localiza los tipos y métodos de enRAGE en tiempo de ejecución.
@@ -165,6 +166,13 @@ En otras palabras:
 Las teclas efectivas dependen de la configuración de controles del juego y de Companion.
 
 ## Vida de campamento
+
+### Encargado de misiones independientes
+
+Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. Su prompt **Pedir una misión** inicia una misión propia: **Reconocimiento de ruta**. El jugador debe visitar el punto marcado y regresar al campamento. Al completar el encargo, se añaden 5 suministros y $25 a la tesorería de la facción, y la extensión suma 5 puntos de prestigio a la salida de `NotorietyOf` para `player_faction`. El progreso, la ubicación del objetivo y el recuento de misiones completadas se guardan en `PlayerFaction.json`.
+
+Este es el primer flujo jugable del sistema de misiones. Sus objetivos los administra `CampMissionGiver`; no consume `WorldEvent` ni `EncounterKind` de enRAGE. El punto de reconocimiento se genera fuera del campamento y utiliza un marcador propio. Las siguientes misiones pueden reutilizar el mismo estado y el método de recompensas.
+
 
 La vida de campamento se aplica a miembros vivos de `player_faction` que Companion puede vincular inequívocamente con un registro y un ped real. Los miembros que están siguiendo activamente al jugador no reciben las tareas de regreso ni las rutinas de ocio; cuando dejan de seguirlo, vuelven a entrar en el ciclo de campamento.
 
