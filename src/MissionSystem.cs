@@ -76,6 +76,17 @@ namespace EnRAGEPlayerFactionExtension
             _bridge = bridge;
             _save = save ?? new MissionSaveData();
             _save.Normalize();
+            if (_faction.PrestigeInitialized)
+            {
+                _save.Prestige = _faction.Prestige;
+                _save.PrestigeInitialized = true;
+            }
+            else if (_save.PrestigeInitialized)
+            {
+                _faction.Prestige = Math.Max(0, Math.Min(100, _save.Prestige));
+                _faction.PrestigeInitialized = true;
+                _faction.Save();
+            }
             _notify = notify;
             _definitions = new List<MissionDefinition>
             {
@@ -256,10 +267,12 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void SeedPrestige(int value)
         {
-            if (_save.PrestigeInitialized) return;
-            _save.Prestige = Math.Max(0, Math.Min(100, value));
-            _save.PrestigeInitialized = true;
-            _faction.Prestige = _save.Prestige;
+            if (!_save.PrestigeInitialized)
+            {
+                _save.Prestige = Math.Max(0, Math.Min(100, value));
+                _save.PrestigeInitialized = true;
+            }
+            _faction.Prestige = Math.Max(0, Math.Min(100, _save.Prestige));
             _faction.PrestigeInitialized = true;
             Save();
             _faction.Save();
