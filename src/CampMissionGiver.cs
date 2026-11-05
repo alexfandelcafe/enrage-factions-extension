@@ -447,9 +447,12 @@ namespace EnRAGEPlayerFactionExtension
             if (_targetBlip != 0 && MAP.DOES_BLIP_EXIST(_targetBlip)) return;
             RemoveTargetBlip();
 
+            Vector3 campCentre = _bridge.GetPlayerCampCentre(_faction);
+            if (campCentre == Vector3.Zero)
+                campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             Vector3 target = _faction.MissionStage == 1
                 ? new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ)
-                : new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
+                : campCentre;
             try
             {
                 _targetBlip = MAP.BLIP_ADD_FOR_COORDS(NativeMapBlipStyle, target.X, target.Y, target.Z);
