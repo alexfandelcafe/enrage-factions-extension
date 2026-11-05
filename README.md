@@ -179,6 +179,8 @@ Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerc
 | **Vigilar el cruce** | Permanecer dentro del área señalada durante 18 segundos y regresar. El contador se pausa al salir de la zona. | +7 prestigio, +6 suministros y $30. |
 | **Entregar el despacho** | Llegar al punto de encuentro, pulsar la tecla contextual y regresar. | +8 prestigio, +5 suministros y $45. |
 
+El alijo aparece como un cajón físico en el punto marcado. El encargo de despacho representa un contacto fuera de escena: se confirma al llegar al punto y pulsar la tecla contextual, sin generar un NPC temporal.
+
 Los objetivos y el progreso —incluidos el punto actual de la patrulla, la interacción del alijo/despacho y el tiempo acumulado de vigilancia— se guardan en `PlayerFaction.json`. Los encargos usan marcadores propios y no consumen `WorldEvent` ni `EncounterKind` de enRAGE. El prestigio de la misión se suma al valor que devuelve `NotorietyOf` para `player_faction`; los suministros y la tesorería se abonan en los mapas nativos de enRAGE.
 
 ### Aislamiento de la facción del jugador
