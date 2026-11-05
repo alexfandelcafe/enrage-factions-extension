@@ -1954,8 +1954,11 @@ namespace EnRAGEPlayerFactionExtension
                    !object.Equals(oldLike, GetField(record, "Like"));
         }
 
-        internal void NormalizeCompanionPlayerFactionRoster()
+        internal void NormalizeCompanionPlayerFactionRoster(PlayerFactionData data)
         {
+            // Never attach Companion-managed IDs to a faction which has not actually been founded.
+            // Prefixes alone are not proof of recruitment: only Companion's exact roster/ped cache is.
+            if (data == null || !data.Founded) return;
             int now = Game.GameTime;
             if (now >= 0 && now < _nextCompanionRosterNormalizeAt) return;
             _nextCompanionRosterNormalizeAt = now + 5000;
@@ -1977,36 +1980,37 @@ namespace EnRAGEPlayerFactionExtension
                 IList roster = main != null ? GetField(main, "Roster") as IList : null;
                 IList storyRoster = main != null ? GetField(main, "StoryRoster") as IList : null;
                 IDictionary cache = cacheField != null ? cacheField.GetValue(null) as IDictionary : null;
-                if (roster == null) return;
+                if (main == null || roster == null || cache == null) return;
+                if (data.ConfirmedRecruitIds == null)
+                    data.ConfirmedRecruitIds = new List<string>();
 
-                // On a fresh game/script load Companion's handle cache may still be empty even
-                // though the saved NemesisRecord is already in enRAGE.Roster. Reconcile those
-                // persisted extcomp_/extvdl_ records first, then merge any live cached records.
-                // The ID prefix is Companion's own stable record namespace; no model matching or
-                // Ped creation is involved in this migration.
+                // The exact Companion cache is the sole authority for new membership. A roster
+                // record existing on disk, or merely having an extcomp_/extvdl_ prefix, is not enough.
                 List<object> candidates = roster.Cast<object>().Where(r => r != null).ToList();
-                // Old Companion configurations could persist extension-created records in StoryRoster.
-                // Recover those records by their stable extension IDs even when no live cache survives.
                 if (storyRoster != null)
                 {
                     foreach (object record in storyRoster)
                         if (record != null && !candidates.Contains(record)) candidates.Add(record);
                 }
-                if (cache != null)
+
+                HashSet<string> cacheConfirmedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                bool dataChanged = false;
+                foreach (DictionaryEntry entry in cache)
                 {
-                    foreach (DictionaryEntry entry in cache)
+                    object cached = entry.Value;
+                    object record = cached != null ? GetField(cached, "Record") : null;
+                    if (record == null) continue;
+                    string id = GetField(record, "Id") as string;
+                    if (string.IsNullOrWhiteSpace(id)) continue;
+                    if (!candidates.Contains(record)) candidates.Add(record);
+
+                    if (IsCompanionRosterRecordId(id))
                     {
-                        object cached = entry.Value;
-                        object record = cached != null ? GetField(cached, "Record") : null;
-                        if (record != null && !candidates.Contains(record)) candidates.Add(record);
-                        if (record != null && string.Equals(GetField(record, "Gang") as string, "player_faction", StringComparison.OrdinalIgnoreCase))
+                        cacheConfirmedIds.Add(id);
+                        if (!data.ConfirmedRecruitIds.Any(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase)))
                         {
-                            Ped ownedPed = GetField(cached, "Ped") as Ped;
-                            if (ownedPed == null || !ownedPed.Exists())
-                            {
-                                try { ownedPed = new Ped(Convert.ToInt32(entry.Key)); } catch { }
-                            }
-                            MarkPedAsEnRageOwned(ownedPed);
+                            data.ConfirmedRecruitIds.Add(id);
+                            dataChanged = true;
                         }
                     }
                 }
@@ -2015,14 +2019,26 @@ namespace EnRAGEPlayerFactionExtension
                 foreach (object record in candidates)
                 {
                     string id = GetField(record, "Id") as string;
-                    if (string.IsNullOrWhiteSpace(id) ||
-                        !(id.StartsWith("extcomp_", StringComparison.OrdinalIgnoreCase) ||
-                          id.StartsWith("extvdl_", StringComparison.OrdinalIgnoreCase)))
-                        continue;
-                    if (GetField(record, "IsAlive") is bool alive && !alive) continue;
-                    if (GetField(record, "PresumedDead") is bool presumedDead && presumedDead) continue;
+                    if (!IsCompanionRosterRecordId(id)) continue;
 
                     string oldGang = GetField(record, "Gang") as string;
+                    bool confirmed = cacheConfirmedIds.Contains(id) ||
+                        data.ConfirmedRecruitIds.Any(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase));
+
+                    if (!confirmed)
+                    {
+                        // Repair prior versions' mistaken prefix-based migrations. Restore their former
+                        // faction when known; otherwise remove only the player_faction assignment.
+                        if (string.Equals(oldGang, "player_faction", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string formerGang = GetField(record, "FormerGang") as string;
+                            SetField(record, "Gang", string.IsNullOrWhiteSpace(formerGang) ? null : formerGang);
+                            changed = true;
+                            Log.Write("Reverted unconfirmed Companion-like record from player_faction: " + id + ".");
+                        }
+                        continue;
+                    }
+
                     if (!string.Equals(oldGang, "player_faction", StringComparison.OrdinalIgnoreCase))
                     {
                         if (!string.IsNullOrWhiteSpace(oldGang)) SetField(record, "FormerGang", oldGang);
@@ -2047,20 +2063,26 @@ namespace EnRAGEPlayerFactionExtension
                     changed |= ApplyCompanionRankAffinity(record);
                 }
 
-                if (cache != null)
+                // Mark ownership only for cache-confirmed recruited peds. Never scan by model or proximity.
+                foreach (DictionaryEntry entry in cache)
                 {
-                    foreach (DictionaryEntry entry in cache)
+                    object cached = entry.Value;
+                    object record = cached != null ? GetField(cached, "Record") : null;
+                    string id = GetField(record, "Id") as string;
+                    if (record == null || !IsCompanionRosterRecordId(id) ||
+                        !(cacheConfirmedIds.Contains(id) || data.ConfirmedRecruitIds.Any(x =>
+                            string.Equals(x, id, StringComparison.OrdinalIgnoreCase))) ||
+                        !string.Equals(GetField(record, "Gang") as string, "player_faction", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    Ped ownedPed = cached != null ? GetField(cached, "Ped") as Ped : null;
+                    if (ownedPed == null || !ownedPed.Exists())
                     {
-                        object cached = entry.Value;
-                        object record = cached != null ? GetField(cached, "Record") : null;
-                        if (!string.Equals(GetField(record, "Gang") as string, "player_faction", StringComparison.OrdinalIgnoreCase)) continue;
-                        Ped ownedPed = GetField(cached, "Ped") as Ped;
-                        if (ownedPed == null || !ownedPed.Exists())
-                        {
-                            try { ownedPed = new Ped(Convert.ToInt32(entry.Key)); } catch { }
-                        }
-                        MarkPedAsEnRageOwned(ownedPed);
+                        int handle;
+                        try { handle = Convert.ToInt32(entry.Key); ownedPed = new Ped(handle); }
+                        catch { ownedPed = null; }
                     }
+                    MarkPedAsEnRageOwned(ownedPed);
                 }
 
                 if (changed)
@@ -2068,27 +2090,15 @@ namespace EnRAGEPlayerFactionExtension
                     MethodInfo saveRoster = main.GetType().GetMethods(InstanceFlags).FirstOrDefault(m =>
                         m.Name == "SaveRoster" && m.GetParameters().Length == 0);
                     if (saveRoster != null) saveRoster.Invoke(main, null);
-                    Log.Write("Companion-managed extcomp/extvdl records reconciled into player_faction roster.");
+                    Log.Write("Companion roster reconciled using exact cache-confirmed recruits only.");
+                }
+                if (dataChanged)
+                {
+                    try { data.Save(); }
+                    catch (Exception ex) { Log.Write("Confirmed recruit ID save warning: " + ex.Message); }
                 }
             }
             catch (Exception ex) { Log.Write("Companion roster normalization warning: " + Unwrap(ex)); }
-        }
-
-        private static void ForceCompanionRecruitmentIds(Type hooks)
-        {
-            try
-            {
-                foreach (string fieldName in new[] { "_recruitGangId", "_recruitRosterId" })
-                {
-                    FieldInfo field = hooks.GetField(fieldName, StaticFlags);
-                    if (field == null || field.IsInitOnly) continue;
-                    string current = Convert.ToString(field.GetValue(null));
-                    if (string.Equals(current, "player_faction", StringComparison.OrdinalIgnoreCase)) continue;
-                    field.SetValue(null, "player_faction");
-                    Log.Write("Pinned Companion " + fieldName + " to fixed ID player_faction (was '" + current + "').");
-                }
-            }
-            catch (Exception ex) { Log.Write("Could not pin Companion gang/roster IDs: " + Unwrap(ex)); }
         }
 
         private static string ReadStaticString(Type type, string name)
