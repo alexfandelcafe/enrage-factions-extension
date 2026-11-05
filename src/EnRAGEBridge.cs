@@ -922,6 +922,70 @@ namespace EnRAGEPlayerFactionExtension
         /// tier changes, or once after a ScriptHook runtime reload, and only when the site
         /// is close enough for collision to be available.
         /// </summary>
+        internal bool InitializeIndependentPrestige(PlayerFactionData data, out string error)
+        {
+            error = null;
+            if (data == null || data.PrestigeInitialized) return true;
+            if (!IsAvailable || MainInstance == null)
+            {
+                error = "enRAGE todavía no está disponible para migrar el prestigio antiguo.";
+                return false;
+            }
+            try
+            {
+                object gang = FindPlayerGang(data.Id);
+                MethodInfo notoriety = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "NotorietyOf" && m.GetParameters().Length == 1 &&
+                    gang != null && m.GetParameters()[0].ParameterType.IsInstanceOfType(gang));
+                if (gang == null || notoriety == null)
+                {
+                    error = "No se pudo leer la notoriedad para la migración inicial del prestigio.";
+                    return false;
+                }
+                // One-time migration for existing saves. From this point forward prestige is independent.
+                data.Prestige = Math.Max(0, Math.Min(100, Convert.ToInt32(notoriety.Invoke(MainInstance, new[] { gang }))));
+                data.PrestigeInitialized = true;
+                data.CampVisualTier = Math.Min(4, data.Prestige / 20);
+                data.Save();
+                Log.Write("Migrated legacy native notoriety into independent faction prestige=" + data.Prestige + ".");
+                return true;
+            }
+            catch (Exception ex) { error = Unwrap(ex); Log.Write("Independent prestige migration failed: " + error); return false; }
+        }
+
+        internal bool AddFactionReward(PlayerFactionData data, int suppliesDelta, int moneyDelta, out string error)
+        {
+            error = null;
+            if (!IsAvailable || MainInstance == null || data == null || !data.Founded)
+            {
+                error = "La facción o enRAGE no está disponible.";
+                return false;
+            }
+            try
+            {
+                object gang = FindPlayerGang(data.Id);
+                if (gang == null) { error = "No se encontró la facción player_faction en enRAGE."; return false; }
+                Type gangType = gang.GetType();
+                MethodInfo addSupplies = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "AddSupplies" && m.GetParameters().Length == 3 &&
+                    m.GetParameters()[0].ParameterType.IsAssignableFrom(gangType) &&
+                    m.GetParameters()[1].ParameterType == typeof(int) && m.GetParameters()[2].ParameterType == typeof(string));
+                MethodInfo addPurse = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "AddPurse" && m.GetParameters().Length == 3 &&
+                    m.GetParameters()[0].ParameterType.IsAssignableFrom(gangType) &&
+                    m.GetParameters()[1].ParameterType == typeof(int) && m.GetParameters()[2].ParameterType == typeof(string));
+                if (suppliesDelta != 0 && addSupplies == null) { error = "No se encontró AddSupplies(Gang,int,string)."; return false; }
+                if (moneyDelta != 0 && addPurse == null) { error = "No se encontró AddPurse(Gang,int,string)."; return false; }
+                if (suppliesDelta != 0) addSupplies.Invoke(MainInstance, new object[] { gang, suppliesDelta, "Player faction mission reward" });
+                if (moneyDelta != 0) addPurse.Invoke(MainInstance, new object[] { gang, moneyDelta, "Player faction mission reward" });
+                string syncError;
+                SyncFactionResources(data, out syncError);
+                if (!string.IsNullOrWhiteSpace(syncError)) Log.Write("Mission reward resource sync warning: " + syncError);
+                return true;
+            }
+            catch (Exception ex) { error = Unwrap(ex); Log.Write("Mission reward application failed: " + error); return false; }
+        }
+
         internal bool SyncPlayerCampVisualTier(PlayerFactionData data, Ped player, out bool physicalKitRebuilt, out string error)
         {
             physicalKitRebuilt = false;
@@ -942,16 +1006,19 @@ namespace EnRAGEPlayerFactionExtension
                 }
 
                 object gang = FindPlayerGang(data.Id);
-                MethodInfo notoriety = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
-                    m.Name == "NotorietyOf" && m.GetParameters().Length == 1 &&
-                    m.GetParameters()[0].ParameterType.IsInstanceOfType(gang));
-                if (gang == null || notoriety == null)
+                if (gang == null)
                 {
-                    error = "No se pudo calcular el prestigio nativo de player_faction.";
+                    error = "No se encontró player_faction para actualizar su aspecto.";
                     return false;
                 }
 
-                int prestige = Math.Max(0, Math.Min(100, Convert.ToInt32(notoriety.Invoke(MainInstance, new[] { gang }))));
+                string migrationError;
+                if (!data.PrestigeInitialized && !InitializeIndependentPrestige(data, out migrationError))
+                {
+                    error = migrationError;
+                    return false;
+                }
+                int prestige = Math.Max(0, Math.Min(100, data.Prestige));
                 int tier = Math.Min(4, prestige / 20);
                 bool newLookRequired = _lastDefinedCampVisualTier != tier || !looks.Contains(data.Id);
                 if (newLookRequired)
