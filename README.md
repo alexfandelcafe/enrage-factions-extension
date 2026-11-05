@@ -173,6 +173,12 @@ Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerc
 
 Este es el primer flujo jugable del sistema de misiones. Sus objetivos los administra `CampMissionGiver`; no consume `WorldEvent` ni `EncounterKind` de enRAGE. El punto de reconocimiento se genera fuera del campamento y utiliza un marcador propio. Las siguientes misiones pueden reutilizar el mismo estado y el método de recompensas.
 
+### Aislamiento de la facción del jugador
+
+La facción `player_faction` no participa en el ciclo nativo de tesorerías, escondites y cachés de suministros de enRAGE; sus recursos se administran mediante la extensión. Después de `LearnCampSites`, la extensión limpia candidatos y campamentos falsos cercanos al campamento propio.
+
+La sincronización con Companion solo migra registros `extcomp_*` / `extvdl_*` que aparecen en su caché exacta de registros por handle. El prefijo del ID por sí solo no prueba que un NPC haya sido reclutado. Los registros no confirmados no se materializan como miembros de la vida del campamento.
+
 
 La vida de campamento se aplica a miembros vivos de `player_faction` que Companion puede vincular inequívocamente con un registro y un ped real. Los miembros que están siguiendo activamente al jugador no reciben las tareas de regreso ni las rutinas de ocio; cuando dejan de seguirlo, vuelven a entrar en el ciclo de campamento.
 
