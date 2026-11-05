@@ -8,8 +8,8 @@ using RDR2.Native;
 namespace EnRAGEPlayerFactionExtension
 {
     /// <summary>
-    /// Independent mission giver and first end-to-end mission. It intentionally does not
-    /// subscribe to or consume enRAGE WorldEvent/Encounter events.
+    /// Independent mission giver and rotating set of player-faction contracts. It intentionally
+    /// does not subscribe to or consume enRAGE WorldEvent/Encounter events.
     /// </summary>
     internal sealed class CampMissionGiver
     {
@@ -63,6 +63,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (!_faction.Founded || string.IsNullOrWhiteSpace(_faction.CampSiteId))
             {
+                DeleteSupplyCacheProp();
                 DeletePed();
                 RemoveTargetBlip();
                 return;
@@ -586,6 +587,7 @@ namespace EnRAGEPlayerFactionExtension
 
                 STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
                 Prop created = World.CreateProp(model, target, false, true);
+                model.MarkAsNoLongerNeeded();
                 if (created == null || !created.Exists())
                 {
                     Log.Write("Supply-cache prop could not be created at " + target + ".");
