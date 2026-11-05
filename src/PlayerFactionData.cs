@@ -66,6 +66,8 @@ namespace EnRAGEPlayerFactionExtension
         // Mission prestige is added by the extension's postfix to enRAGE's NotorietyOf for player_faction.
         [DataMember(Order = 38)] public int MissionPrestige { get; set; }
         [DataMember(Order = 39)] public int MissionsCompleted { get; set; }
+        // Stable IDs that Companion's exact ped-to-roster cache has confirmed as actual recruits.
+        [DataMember(Order = 40)] public List<string> ConfirmedRecruitIds { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -104,6 +106,8 @@ namespace EnRAGEPlayerFactionExtension
                         data.RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
                     if (data.UncountedRosterIds == null)
                         data.UncountedRosterIds = new List<string>();
+                    if (data.ConfirmedRecruitIds == null)
+                        data.ConfirmedRecruitIds = new List<string>();
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -113,7 +117,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(12, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(13, data.SchemaVersion);
                     return data;
                 }
             }
@@ -170,7 +174,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 12,
+                SchemaVersion = 13,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -189,6 +193,7 @@ namespace EnRAGEPlayerFactionExtension
                 MissionTargetZ = 0f,
                 MissionPrestige = 0,
                 MissionsCompleted = 0,
+                ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             };
