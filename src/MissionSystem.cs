@@ -267,6 +267,8 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void SeedPrestige(int value)
         {
+            if (_save.PrestigeInitialized && _faction.PrestigeInitialized &&
+                _save.Prestige == _faction.Prestige) return;
             if (!_save.PrestigeInitialized)
             {
                 _save.Prestige = Math.Max(0, Math.Min(100, value));
