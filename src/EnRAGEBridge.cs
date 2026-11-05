@@ -1400,6 +1400,14 @@ namespace EnRAGEPlayerFactionExtension
             return null;
         }
 
+        internal void ForcePlayerFactionCampSafety(PlayerFactionData data)
+        {
+            // LearnCampSites can create a false candidate/site during its own scan. Bypass the normal
+            // five-second maintenance throttle so it is removed immediately after that scan completes.
+            _nextPlayerFactionNeutralityAt = 0;
+            MaintainPlayerFactionNeutrality(data);
+        }
+
         internal bool AwardMissionResources(PlayerFactionData data, int suppliesReward, int treasuryReward, out string error)
         {
             error = null;
@@ -2212,6 +2220,13 @@ namespace EnRAGEPlayerFactionExtension
                     if (ped == null || !ped.Exists() || ped.Handle != handle) ped = new Ped(handle);
                     if (ped == null || !ped.Exists() || ped.Handle != handle) continue;
 
+                    if (IsCompanionRosterRecordId(id) &&
+                        !data.ConfirmedRecruitIds.Any(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        data.ConfirmedRecruitIds.Add(id);
+                        dataChanged = true;
+                    }
+
                     int preferredHandle;
                     bool savedHandleMatches = data.CampRosterPedHandles.TryGetValue(id, out preferredHandle) && preferredHandle == handle;
                     if (!cachedById.ContainsKey(id) || savedHandleMatches)
@@ -2235,6 +2250,9 @@ namespace EnRAGEPlayerFactionExtension
                     object record = entry.Value;
                     rosterIndex++;
                     if (string.IsNullOrWhiteSpace(id) || record == null) continue;
+                    if (IsCompanionRosterRecordId(id) &&
+                        !data.ConfirmedRecruitIds.Any(x => string.Equals(x, id, StringComparison.OrdinalIgnoreCase)))
+                        continue; // A prefix alone is never enough to turn an NPC into a camp member.
                     if (GetField(record, "IsAlive") is bool alive && !alive) continue;
                     if (GetField(record, "PresumedDead") is bool presumedDead && presumedDead) continue;
                     if (GetField(record, "Story") is bool story && story) continue;
@@ -2618,8 +2636,20 @@ namespace EnRAGEPlayerFactionExtension
             MethodInfo updateSocial = FindPedArgumentMethod(_mainType, "UpdateSocial", 1);
             PatchFirstIfFound(updateSocial, nameof(FounderPatches.UpdateSocialPrefix));
             PatchIfFound(updateSocial, nameof(FounderPatches.UpdateSocialPostfix), false);
-            PatchFirstIfFound(FindPedArgumentMethod(_mainType, "LearnCampSites", 1), nameof(FounderPatches.PreparePlayerFactionCampDiscoveryPrefix));
+            MethodInfo learnCampSites = FindPedArgumentMethod(_mainType, "LearnCampSites", 1);
+            PatchFirstIfFound(learnCampSites, nameof(FounderPatches.PreparePlayerFactionCampDiscoveryPrefix));
+            PatchIfFound(learnCampSites, nameof(FounderPatches.CleanupPlayerFactionCampDiscoveryPostfix), false);
             PatchIfFound(FindMethod(_mainType, "AssignCamps", 0), nameof(FounderPatches.PreventPlayerFactionCampAssignmentPostfix), false);
+
+            // Native enRAGE Holdings automatically manages supply caches, stashes and guards for
+            // ordinary gangs. The player faction uses this extension's own economy/missions instead.
+            Type holdingsType = _mainType.Assembly.GetType("NemesisSystem.Holdings", false);
+            MethodInfo holdsCamps = holdingsType != null
+                ? holdingsType.GetMethods(StaticFlags).FirstOrDefault(m =>
+                    m.Name == "HoldsCamps" && m.IsStatic && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType == _gangType && m.ReturnType == typeof(bool))
+                : null;
+            PatchIfFound(holdsCamps, nameof(FounderPatches.DisablePlayerFactionNativeHoldingsPrefix), true);
 
             MethodInfo relation = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
                 m.Name == "Relation" && m.GetParameters().Length == 2 &&
@@ -3280,6 +3310,37 @@ namespace EnRAGEPlayerFactionExtension
             }
             catch (Exception ex) { Log.Write("Pre-LearnCampSites player-faction guard warning: " + ex.Message); }
             return true;
+        }
+
+        internal static void CleanupPlayerFactionCampDiscoveryPostfix(object __instance, object[] __args)
+        {
+            try
+            {
+                if (Runtime != null) Runtime.CleanupPlayerFactionAfterCampDiscovery();
+            }
+            catch (Exception ex) { Log.Write("Post-LearnCampSites player-faction cleanup warning: " + ex.Message); }
+        }
+
+        internal static bool DisablePlayerFactionNativeHoldingsPrefix(object[] __args, ref bool __result)
+        {
+            try
+            {
+                object gang = __args != null && __args.Length > 0 ? __args[0] : null;
+                string id = ReadMember(gang, "Id") as string;
+                string playerFactionId = string.IsNullOrWhiteSpace(PlayerFactionId) ? "player_faction" : PlayerFactionId;
+                if (!string.Equals(id, playerFactionId, StringComparison.OrdinalIgnoreCase))
+                    return true;
+
+                // Suppress enRAGE's automatic treasury/supply-stash lifecycle for our custom gang;
+                // mission rewards and resources are managed by the player-faction extension.
+                __result = false;
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Player-faction native Holdings suppression warning: " + ex.Message);
+                return true;
+            }
         }
 
         internal static bool PlayerFactionRelationPrefix(object[] __args, ref int __result)
