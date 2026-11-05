@@ -73,6 +73,8 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 42)] public int MissionObjectiveIndex { get; set; }
         [DataMember(Order = 43)] public bool MissionObjectiveReady { get; set; }
         [DataMember(Order = 44)] public int MissionWaitProgressMs { get; set; }
+        // Runtime entity handle for the visible supply cache; verified against model and coordinates on reconnect.
+        [DataMember(Order = 45)] public int MissionCachePropHandle { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -122,7 +124,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(14, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(15, data.SchemaVersion);
                     return data;
                 }
             }
@@ -179,7 +181,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 14,
+                SchemaVersion = 15,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -202,6 +204,7 @@ namespace EnRAGEPlayerFactionExtension
                 MissionObjectiveIndex = 0,
                 MissionObjectiveReady = false,
                 MissionWaitProgressMs = 0,
+                MissionCachePropHandle = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
