@@ -26,6 +26,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong SetBlipNameHash = 11290983183885202434UL;
         private const uint NativeMapBlipStyle = 2339406903U;
         private const string PedModel = "U_M_M_RhdBartender_01";
+        private const string SupplyCacheModel = "p_crate03x";
         private const string TargetSprite = "blip_poi";
         private const int MissionReconnaissance = 0;
         private const int MissionPatrol = 1;
@@ -38,6 +39,8 @@ namespace EnRAGEPlayerFactionExtension
         private readonly EnRAGEBridge _bridge;
         private readonly PlayerFactionData _faction;
         private Ped _ped;
+        private Prop _supplyCache;
+        private int _nextCacheSpawnRetryAt;
         private int _prompt;
         private int _promptGroup;
         private int _targetBlip;
@@ -75,6 +78,14 @@ namespace EnRAGEPlayerFactionExtension
             if (campCentre == Vector3.Zero)
                 campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (campCentre == Vector3.Zero) return;
+
+            if (_faction.MissionStage == 1 && _faction.MissionType == MissionSupplyCache)
+                MaintainSupplyCacheProp(player);
+            else if (_faction.MissionCachePropHandle != 0)
+            {
+                DeleteSupplyCacheProp();
+                SaveFaction();
+            }
 
             UpdateMissionProgress(player, campCentre);
             if (_faction.MissionStage > 0) EnsureTargetBlip();
@@ -408,6 +419,7 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             // The list rotates only after a completed contract. An active mission is never replaced.
+            if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
             _faction.MissionType = _faction.MissionsCompleted % 5;
             _faction.MissionObjectiveIndex = 0;
             _faction.MissionObjectiveReady = false;
@@ -524,6 +536,100 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        private void MaintainSupplyCacheProp(Ped player)
+        {
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            if (player == null || !player.Exists() || player.Position.DistanceTo(target) > 110f)
+                return;
+
+            if (_supplyCache != null && _supplyCache.Exists())
+                return;
+
+            uint expectedModel = MISC.GET_HASH_KEY(SupplyCacheModel);
+            if (_faction.MissionCachePropHandle != 0)
+            {
+                try
+                {
+                    Prop candidate = new Prop(_faction.MissionCachePropHandle);
+                    bool valid = candidate.Exists() &&
+                        unchecked((uint)candidate.Model.Hash) == expectedModel &&
+                        candidate.Position.DistanceTo(target) <= 12f;
+                    if (valid)
+                    {
+                        _supplyCache = candidate;
+                        return;
+                    }
+                }
+                catch { }
+
+                _faction.MissionCachePropHandle = 0;
+                SaveFaction();
+            }
+
+            if (Game.GameTime < _nextCacheSpawnRetryAt)
+                return;
+            _nextCacheSpawnRetryAt = Game.GameTime + 5000;
+
+            try
+            {
+                Model model = new Model(SupplyCacheModel);
+                if (!model.IsValid)
+                {
+                    Log.Write("Supply-cache prop model is invalid: " + SupplyCacheModel + ".");
+                    return;
+                }
+                if (!model.IsLoaded && !model.Request(1000))
+                {
+                    Log.Write("Supply-cache prop model did not load: " + SupplyCacheModel + ".");
+                    return;
+                }
+
+                STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
+                Prop created = World.CreateProp(model, target, false, true);
+                if (created == null || !created.Exists())
+                {
+                    Log.Write("Supply-cache prop could not be created at " + target + ".");
+                    return;
+                }
+
+                _supplyCache = created;
+                _faction.MissionCachePropHandle = created.Handle;
+                SaveFaction();
+                Log.Write("Independent mission supply cache created. Handle=" + created.Handle + ", position=" + target + ".");
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Supply-cache prop spawn warning: " + ex.Message);
+            }
+        }
+
+        private void DeleteSupplyCacheProp()
+        {
+            int handle = _faction.MissionCachePropHandle;
+            Prop candidate = _supplyCache;
+            if ((candidate == null || !candidate.Exists()) && handle != 0)
+            {
+                try { candidate = new Prop(handle); }
+                catch { candidate = null; }
+            }
+
+            if (candidate != null && candidate.Exists())
+            {
+                try
+                {
+                    uint expectedModel = MISC.GET_HASH_KEY(SupplyCacheModel);
+                    Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+                    bool belongsToMission = unchecked((uint)candidate.Model.Hash) == expectedModel &&
+                        (target == Vector3.Zero || candidate.Position.DistanceTo(target) <= 12f);
+                    if (belongsToMission) candidate.Delete();
+                }
+                catch (Exception ex) { Log.Write("Supply-cache prop cleanup warning: " + ex.Message); }
+            }
+
+            _supplyCache = null;
+            _faction.MissionCachePropHandle = 0;
+        }
+
         private void UpdateMissionProgress(Ped player, Vector3 campCentre)
         {
             if (_faction.MissionStage == 1)
@@ -621,6 +727,8 @@ namespace EnRAGEPlayerFactionExtension
 
         private void AdvanceMissionToReturn(string message)
         {
+            if (_faction.MissionType == MissionSupplyCache)
+                DeleteSupplyCacheProp();
             _faction.MissionStage = 2;
             _faction.MissionObjectiveReady = false;
             _faction.MissionWaitProgressMs = 0;
@@ -646,6 +754,8 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             string completedName = GetMissionTitle(_faction.MissionType);
+            if (_faction.MissionType == MissionSupplyCache)
+                DeleteSupplyCacheProp();
             _faction.MissionPrestige = Math.Min(100, _faction.MissionPrestige + prestigeReward);
             _faction.MissionsCompleted++;
             _faction.MissionStage = 0;
