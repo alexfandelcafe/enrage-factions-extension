@@ -244,7 +244,7 @@ namespace EnRAGEPlayerFactionExtension
             // Companion may load after enRAGE/the extension. Retry both hooks and migrate exact cached
             // Companion records to the fixed faction once that assembly becomes available.
             _bridge.TryInstallCompanionIntegrationPatches();
-            _bridge.NormalizeCompanionPlayerFactionRoster();
+            _bridge.NormalizeCompanionPlayerFactionRoster(_faction);
             if (_faction.Founded && _factionRegistered && Game.GameTime >= _nextPlayerFactionProtectionAt)
             {
                 _nextPlayerFactionProtectionAt = Game.GameTime + 500;
@@ -486,10 +486,17 @@ namespace EnRAGEPlayerFactionExtension
         internal void PreparePlayerFactionForCampDiscovery()
         {
             if (!_faction.Founded) return;
-            // Reconcile the stable extcomp_/extvdl_ record IDs before marking their actual handles.
-            _bridge.NormalizeCompanionPlayerFactionRoster();
+            // Reconcile only cache-confirmed Companion recruits before enRAGE scans ambient peds.
+            _bridge.NormalizeCompanionPlayerFactionRoster(_faction);
             _bridge.MarkKnownPlayerFactionPedsAsEnRageOwned(_faction);
             _bridge.MaintainPlayerFactionNeutrality(_faction);
+        }
+
+        internal void CleanupPlayerFactionAfterCampDiscovery()
+        {
+            if (!_faction.Founded) return;
+            _bridge.NormalizeCompanionPlayerFactionRoster(_faction);
+            _bridge.ForcePlayerFactionCampSafety(_faction);
         }
 
         internal bool IsPlayerCampSiteId(string siteId)
