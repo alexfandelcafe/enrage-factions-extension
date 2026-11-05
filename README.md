@@ -182,7 +182,7 @@ Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerc
 
 La dificultad tiene tres niveles (**baja, media y alta**) y multiplica las recompensas base en un 30 % por nivel. En el asalto al convoy se genera una carreta con escoltas hostiles cerca del objetivo; el número de enemigos, su precisión y la munición aumentan con la dificultad. La escena solo se crea cerca del jugador, y los handles guardados se validan por modelo y posición antes de reutilizarse o limpiarse.
 
-El catálogo de contratos, el controlador de entidades del objetivo y el encargado del campamento están separados en clases propias. Los objetivos usan el sprite **blip_objective**, en lugar de un icono de punto de interés. El progreso y la dificultad activa se guardan en PlayerFaction.json; el sistema sigue usando marcadores propios y no consume eventos de WorldEvent ni EncounterKind de enRAGE.
+El alijo de provisiones sigue apareciendo como un cajón físico; el despacho representa un contacto fuera de escena y se confirma con la tecla contextual. En el convoy, el saqueo se registra al interactuar junto a la carreta una vez derrotados los escoltas.\n\nEl catálogo de contratos, el controlador de entidades del objetivo y el encargado del campamento están separados en clases propias. Los objetivos usan el sprite **blip_objective**, en lugar de un icono de punto de interés. El progreso y la dificultad activa se guardan en PlayerFaction.json; el sistema sigue usando marcadores propios y no consume eventos de WorldEvent ni EncounterKind de enRAGE.
 
 ### Aislamiento de la facción del jugador
 
