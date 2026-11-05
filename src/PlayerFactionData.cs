@@ -56,6 +56,16 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 31)] public int CampVisualTier { get; set; }
         // Per-roster member offset applied to the displayed/Companion "Hacia ti" value.
         [DataMember(Order = 32)] public Dictionary<string, int> RegardOffsets { get; set; }
+        // Runtime handle for the separate mission-giver NPC; valid only in the process that created it.
+        [DataMember(Order = 33)] public int MissionGiverPedHandle { get; set; }
+        // 0 = none, 1 = visit objective, 2 = return to camp, 3 = reward pending.
+        [DataMember(Order = 34)] public int MissionStage { get; set; }
+        [DataMember(Order = 35)] public float MissionTargetX { get; set; }
+        [DataMember(Order = 36)] public float MissionTargetY { get; set; }
+        [DataMember(Order = 37)] public float MissionTargetZ { get; set; }
+        // Mission prestige is added by the extension's postfix to enRAGE's NotorietyOf for player_faction.
+        [DataMember(Order = 38)] public int MissionPrestige { get; set; }
+        [DataMember(Order = 39)] public int MissionsCompleted { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -103,7 +113,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(11, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(12, data.SchemaVersion);
                     return data;
                 }
             }
@@ -160,7 +170,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 11,
+                SchemaVersion = 12,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -172,6 +182,13 @@ namespace EnRAGEPlayerFactionExtension
                 AllowGangLifeEvents = false,
                 AllowAnswersGunfire = false,
                 CampManagerPedHandle = 0,
+                MissionGiverPedHandle = 0,
+                MissionStage = 0,
+                MissionTargetX = 0f,
+                MissionTargetY = 0f,
+                MissionTargetZ = 0f,
+                MissionPrestige = 0,
+                MissionsCompleted = 0,
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             };
