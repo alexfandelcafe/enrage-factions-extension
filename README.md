@@ -169,9 +169,17 @@ Las teclas efectivas dependen de la configuración de controles del juego y de C
 
 ### Encargado de misiones independientes
 
-Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. Su prompt **Pedir una misión** inicia una misión propia: **Reconocimiento de ruta**. El jugador debe visitar el punto marcado y regresar al campamento. Al completar el encargo, se añaden 5 suministros y $25 a la tesorería de la facción, y la extensión suma 5 puntos de prestigio a la salida de `NotorietyOf` para `player_faction`. El progreso, la ubicación del objetivo y el recuento de misiones completadas se guardan en `PlayerFaction.json`.
+Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. Su prompt **Pedir una misión** asigna un encargo independiente. Las misiones rotan después de cada finalización y no se puede iniciar otra mientras haya una activa:
 
-Este es el primer flujo jugable del sistema de misiones. Sus objetivos los administra `CampMissionGiver`; no consume `WorldEvent` ni `EncounterKind` de enRAGE. El punto de reconocimiento se genera fuera del campamento y utiliza un marcador propio. Las siguientes misiones pueden reutilizar el mismo estado y el método de recompensas.
+| Encargo | Objetivo | Recompensa |
+|---|---|---|
+| **Reconocimiento de ruta** | Visitar un punto marcado y regresar al campamento. | +5 prestigio, +5 suministros y $25. |
+| **Patrulla de frontera** | Recorrer tres puntos de control, en orden, y regresar. | +8 prestigio, +8 suministros y $35. |
+| **Recuperar provisiones** | Encontrar el alijo, pulsar la tecla contextual junto al marcador y regresar. | +9 prestigio, +12 suministros y $20. |
+| **Vigilar el cruce** | Permanecer dentro del área señalada durante 18 segundos y regresar. El contador se pausa al salir de la zona. | +7 prestigio, +6 suministros y $30. |
+| **Entregar el despacho** | Llegar al punto de encuentro, pulsar la tecla contextual y regresar. | +8 prestigio, +5 suministros y $45. |
+
+Los objetivos y el progreso —incluidos el punto actual de la patrulla, la interacción del alijo/despacho y el tiempo acumulado de vigilancia— se guardan en `PlayerFaction.json`. Los encargos usan marcadores propios y no consumen `WorldEvent` ni `EncounterKind` de enRAGE. El prestigio de la misión se suma al valor que devuelve `NotorietyOf` para `player_faction`; los suministros y la tesorería se abonan en los mapas nativos de enRAGE.
 
 ### Aislamiento de la facción del jugador
 
