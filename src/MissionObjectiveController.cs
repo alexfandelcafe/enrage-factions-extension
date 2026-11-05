@@ -15,7 +15,7 @@ namespace EnRAGEPlayerFactionExtension
     {
         private const int MissionConvoy = 5;
         private const string ConvoyWagonModel = "wagon02x";
-        private static readonly string[] GuardModels = { "G_M_M_UniCriminals_01", "G_M_M_UniCriminals_02", "G_M_M_UniCriminals_03" };
+        private static readonly string[] GuardModels = { "G_M_M_UniCriminals_01", "G_M_M_UniCriminals_02", "G_M_M_UniDuster_01" };
         private readonly PlayerFactionData _faction;
         private int _nextSpawnAttemptAt;
 
@@ -174,7 +174,7 @@ namespace EnRAGEPlayerFactionExtension
             try
             {
                 Ped guard = new Ped(handle);
-                if (!guard.Exists() || guard.Position.DistanceTo(target) > 80f) return null;
+                if (!guard.Exists() || guard.Position.DistanceTo(target) > 500f) return null;
                 uint hash = unchecked((uint)guard.Model.Hash);
                 foreach (string model in GuardModels) if (hash == MISC.GET_HASH_KEY(model)) return guard;
             }
