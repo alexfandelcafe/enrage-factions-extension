@@ -72,9 +72,32 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (player == null || !player.Exists()) return false;
             Vector3 target = MissionTarget;
-            Vehicle wagon = ResolveWagon(target);
+            Vehicle wagon = ResolveWagon(target, 250f);
             Vector3 loot = wagon != null && wagon.Exists() ? wagon.Position : target;
             return loot != Vector3.Zero && player.Position.DistanceTo(loot) <= 8f;
+        }
+
+        internal bool IsWagonDestroyedOrMissing()
+        {
+            // A convoy must not soft-lock when its cargo wagon is destroyed, despawned, or
+            // knocked far away by an explosion. No wagon handle also means the spawn failed;
+            // once its guards are defeated, the player can still finish the contract.
+            if (_faction.MissionConvoyWagonHandle == 0)
+                return true;
+
+            try
+            {
+                Vehicle wagon = ResolveWagon(MissionTarget, 250f);
+                if (wagon == null || !wagon.Exists())
+                    return true;
+
+                return wagon.IsDead || wagon.Health <= 0 || wagon.BodyHealth <= 0f || wagon.IsOnFire;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Convoy wagon damage check warning: " + ex.Message);
+                return true;
+            }
         }
 
         internal void CleanupConvoy()
@@ -83,7 +106,7 @@ namespace EnRAGEPlayerFactionExtension
                 (_faction.MissionConvoyEnemyHandles != null && _faction.MissionConvoyEnemyHandles.Count > 0) ||
                 _faction.MissionEncounterSpawned || _faction.MissionEncounterProcessId != 0;
             Vector3 target = MissionTarget;
-            Vehicle wagon = ResolveWagon(target);
+            Vehicle wagon = ResolveWagon(target, 250f);
             try { if (wagon != null && wagon.Exists()) wagon.Delete(); }
             catch (Exception ex) { Log.Write("Convoy wagon cleanup warning: " + ex.Message); }
             if (_faction.MissionConvoyEnemyHandles != null)
@@ -155,13 +178,13 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        private Vehicle ResolveWagon(Vector3 target)
+        private Vehicle ResolveWagon(Vector3 target, float maxDistance = 35f)
         {
             if (_faction.MissionConvoyWagonHandle == 0 || target == Vector3.Zero) return null;
             try
             {
                 Vehicle wagon = new Vehicle(_faction.MissionConvoyWagonHandle);
-                if (wagon.Exists() && unchecked((uint)wagon.Model.Hash) == MISC.GET_HASH_KEY(ConvoyWagonModel) && wagon.Position.DistanceTo(target) <= 35f)
+                if (wagon.Exists() && unchecked((uint)wagon.Model.Hash) == MISC.GET_HASH_KEY(ConvoyWagonModel) && wagon.Position.DistanceTo(target) <= maxDistance)
                     return wagon;
             }
             catch { }

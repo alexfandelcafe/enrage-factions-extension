@@ -664,17 +664,26 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 else if (_faction.MissionType == MissionConvoy)
                 {
-                    if (distance <= 42f && _objectiveController.AllGuardsDefeated())
+                    if (_objectiveController.AllGuardsDefeated())
                     {
-                        if (!_faction.MissionObjectiveReady)
+                        if (_objectiveController.IsWagonDestroyedOrMissing())
                         {
-                            _faction.MissionObjectiveReady = true;
-                            SaveFaction();
-                            Notify("Los escoltas han caído. Acércate a la carreta y pulsa la tecla contextual para saquear el cargamento.");
+                            // Destroying the wagon is a valid fallback completion: do not require
+                            // a loot interaction with a vehicle that no longer exists.
+                            AdvanceMissionToReturn("Has eliminado a los escoltas, pero la carreta ha sido destruida. El convoy queda neutralizado; regresa al campamento.");
                         }
-                        else if (_objectiveController.IsPlayerNearLoot(player) && JustPressed(ContextControl))
+                        else if (distance <= 65f)
                         {
-                            AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
+                            if (!_faction.MissionObjectiveReady)
+                            {
+                                _faction.MissionObjectiveReady = true;
+                                SaveFaction();
+                                Notify("Los escoltas han caído. Acércate a la carreta y pulsa la tecla contextual para saquear el cargamento.");
+                            }
+                            else if (_objectiveController.IsPlayerNearLoot(player) && JustPressed(ContextControl))
+                            {
+                                AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
+                            }
                         }
                     }
                 }
