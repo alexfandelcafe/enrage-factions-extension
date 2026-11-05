@@ -66,6 +66,8 @@ namespace EnRAGEPlayerFactionExtension
         private int _founderPrompt;
         private int _promptGroup;
         private Ped _campManager;
+        private MissionManager _missionManager;
+        private MissionGiverRuntime _missionGiver;
         private int _campManagerPrompt;
         private int _campManagerPromptGroup;
         private int _nextCampManagerSpawnAt;
@@ -212,6 +214,10 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             _bridge = new EnRAGEBridge();
+            MissionSaveData missionSave = MissionPersistence.Load();
+            _missionManager = new MissionManager(_faction, _bridge, missionSave, Notify);
+            _missionGiver = new MissionGiverRuntime(_faction, _bridge, _missionManager, Notify);
+            MissionChroniclePatch.Manager = _missionManager;
             FounderPatches.Runtime = this;
             // Native blip handles are removed on the first game tick, not in the constructor.
             // The previous behavior could run before the map/UI native state was ready.
@@ -242,6 +248,16 @@ namespace EnRAGEPlayerFactionExtension
             // Companion records to the fixed faction once that assembly becomes available.
             _bridge.TryInstallCompanionIntegrationPatches();
             _bridge.NormalizeCompanionPlayerFactionRoster();
+            MissionChroniclePatch.Manager = _missionManager;
+            MissionChroniclePatch.Install(_bridge.MainInstance);
+            if (!_faction.PrestigeInitialized)
+            {
+                string prestigeMigrationError;
+                _bridge.InitializeIndependentPrestige(_faction, out prestigeMigrationError);
+                if (!string.IsNullOrWhiteSpace(prestigeMigrationError)) Log.Write("Prestige migration pending: " + prestigeMigrationError);
+            }
+            if (_missionManager != null && _faction.PrestigeInitialized)
+                _missionManager.SeedPrestige(_faction.Prestige);
             if (_faction.Founded && _factionRegistered && Game.GameTime >= _nextPlayerFactionProtectionAt)
             {
                 _nextPlayerFactionProtectionAt = Game.GameTime + 500;
@@ -372,6 +388,7 @@ namespace EnRAGEPlayerFactionExtension
                 if (_factionRegistered && campPlayer != null && campPlayer.Exists() && !campPlayer.IsDead)
                 {
                     MaintainCampManager(campPlayer);
+                    if (_missionGiver != null) _missionGiver.Tick(campPlayer);
                     MaintainCampDefence(campPlayer);
                     MaintainCampAmbientConversation(campPlayer);
                 }
@@ -379,6 +396,7 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     SetPromptVisible(_campManagerPrompt, false);
                     RemoveCampManagerPrompt();
+                    if (_missionGiver != null) _missionGiver.Tick(campPlayer);
                 }
                 return;
             }
@@ -421,6 +439,8 @@ namespace EnRAGEPlayerFactionExtension
             // Harmony patches outlive this managed Script instance unless explicitly released.
             _factionMenuOpen = false;
             _keyboardOpen = false;
+            if (_missionGiver != null) _missionGiver.Cleanup();
+            MissionChroniclePatch.Uninstall();
             _campSelectionActive = false;
             _campTeleportPending = false;
             try { SetPromptVisible(_founderPrompt, false); } catch { }
