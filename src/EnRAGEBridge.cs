@@ -2650,6 +2650,13 @@ namespace EnRAGEPlayerFactionExtension
                     m.GetParameters()[0].ParameterType == _gangType && m.ReturnType == typeof(bool))
                 : null;
             PatchIfFound(holdsCamps, nameof(FounderPatches.DisablePlayerFactionNativeHoldingsPrefix), true);
+            MethodInfo holdingsPass = holdingsType != null
+                ? holdingsType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "Pass" && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType.IsByRef &&
+                    m.GetParameters()[0].ParameterType.GetElementType() == typeof(bool))
+                : null;
+            PatchIfFound(holdingsPass, nameof(FounderPatches.CleanupPlayerFactionNativeHoldingsPostfix), false);
 
             MethodInfo relation = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
                 m.Name == "Relation" && m.GetParameters().Length == 2 &&
@@ -3340,6 +3347,39 @@ namespace EnRAGEPlayerFactionExtension
             {
                 Log.Write("Player-faction native Holdings suppression warning: " + ex.Message);
                 return true;
+            }
+        }
+
+        internal static void CleanupPlayerFactionNativeHoldingsPostfix(object __instance, ref bool __0)
+        {
+            try
+            {
+                if (__instance == null) return;
+                string playerFactionId = string.IsNullOrWhiteSpace(PlayerFactionId) ? "player_faction" : PlayerFactionId;
+                Assembly assembly = __instance.GetType().Assembly;
+                Type gangsType = assembly.GetType("NemesisSystem.Gangs", false);
+                MethodInfo byId = gangsType != null
+                    ? gangsType.GetMethods(Flags).FirstOrDefault(m =>
+                        m.Name == "ById" && m.IsStatic && m.GetParameters().Length == 1 &&
+                        m.GetParameters()[0].ParameterType == typeof(string))
+                    : null;
+                object gang = byId != null ? byId.Invoke(null, new object[] { playerFactionId }) : null;
+                if (gang == null) return;
+
+                MethodInfo forget = __instance.GetType().GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "Forget" && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType.IsInstanceOfType(gang) && m.ReturnType == typeof(bool));
+                if (forget == null) return;
+                bool removed = Convert.ToBoolean(forget.Invoke(__instance, new[] { gang }));
+                if (removed)
+                {
+                    __0 = true; // Let enRAGE persist the cleared native holdings state.
+                    Log.Write("Cleared persisted native treasury/stash/supply-cache state for player_faction.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Player-faction native Holdings cleanup warning: " + ex.Message);
             }
         }
 
