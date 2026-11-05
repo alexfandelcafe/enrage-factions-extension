@@ -1411,6 +1411,19 @@ namespace EnRAGEPlayerFactionExtension
 
             try
             {
+                if (!data.ResourcesInitialized)
+                {
+                    string syncError;
+                    SyncFactionResources(data, out syncError);
+                    if (!data.ResourcesInitialized)
+                    {
+                        error = string.IsNullOrWhiteSpace(syncError)
+                            ? "Los recursos de la facción no se pudieron inicializar."
+                            : syncError;
+                        return false;
+                    }
+                }
+
                 IDictionary supplies = GetField(MainInstance, "SupplyMap") as IDictionary;
                 IDictionary treasury = GetField(MainInstance, "Treasury") as IDictionary;
                 if (supplies == null || treasury == null)
