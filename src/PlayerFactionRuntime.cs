@@ -2941,7 +2941,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.LeaderDisplayName = string.Empty;
             _faction.LeaderName = string.Empty;
             _faction.Id = "player_faction";
-            _faction.SchemaVersion = 10;
+            _faction.SchemaVersion = 14;
             // Every new founding starts with an empty Chronicle force/economy, even if an older
             // unfounded save still contains stale totals from a previous band. SyncFactionResources
             // will baseline old roster entries so only new recruits add manpower.
