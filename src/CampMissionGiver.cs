@@ -356,7 +356,7 @@ namespace EnRAGEPlayerFactionExtension
             method.Invoke(null, converted);
         }
 
-        private void OnInteract()
+        private unsafe void OnInteract()
         {
             if (_faction.MissionStage > 0)
             {
