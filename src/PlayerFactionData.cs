@@ -58,7 +58,7 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 32)] public Dictionary<string, int> RegardOffsets { get; set; }
         // Runtime handle for the separate mission-giver NPC; valid only in the process that created it.
         [DataMember(Order = 33)] public int MissionGiverPedHandle { get; set; }
-        // 0 = none, 1 = visit objective, 2 = return to camp, 3 = reward pending.
+        // 0 = none, 1 = mission objective (visit, interact or timed hold), 2 = return to camp, 3 = reward pending.
         [DataMember(Order = 34)] public int MissionStage { get; set; }
         [DataMember(Order = 35)] public float MissionTargetX { get; set; }
         [DataMember(Order = 36)] public float MissionTargetY { get; set; }
