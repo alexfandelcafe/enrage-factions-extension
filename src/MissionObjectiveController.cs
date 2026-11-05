@@ -147,8 +147,8 @@ namespace EnRAGEPlayerFactionExtension
                     if (guard == null || !guard.Exists()) continue;
                     ENTITY.SET_ENTITY_AS_MISSION_ENTITY(guard.Handle, true, true);
                     guard.Accuracy = 20 + _faction.MissionDifficulty * 12;
-                    guard.Weapons.Give(WeaponHash.RevolverCattleman, 36 + _faction.MissionDifficulty * 18, true, true);
-                    guard.Task.FightAgainst(player);
+                    guard.Weapons.Give((uint)WeaponHash.RevolverCattleman, 36 + _faction.MissionDifficulty * 18);
+                    guard.Task.Combat(player, -1);
                     _faction.MissionConvoyEnemyHandles.Add(guard.Handle);
                 }
                 catch (Exception ex) { Log.Write("Convoy guard spawn warning for " + modelName + ": " + ex.Message); }
