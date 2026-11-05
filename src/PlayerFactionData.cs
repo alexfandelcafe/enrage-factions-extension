@@ -56,6 +56,9 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 31)] public int CampVisualTier { get; set; }
         // Per-roster member offset applied to the displayed/Companion "Hacia ti" value.
         [DataMember(Order = 32)] public Dictionary<string, int> RegardOffsets { get; set; }
+        // Independent faction prestige; it must never be read from or written to enRAGE Notoriety.
+        [DataMember(Order = 33)] public int Prestige { get; set; }
+        [DataMember(Order = 34)] public bool PrestigeInitialized { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -103,7 +106,8 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(11, data.SchemaVersion);
+                    data.Prestige = Math.Max(0, Math.Min(100, data.Prestige));
+                    data.SchemaVersion = Math.Max(12, data.SchemaVersion);
                     return data;
                 }
             }
@@ -160,7 +164,9 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 11,
+                SchemaVersion = 12,
+                Prestige = 0,
+                PrestigeInitialized = false,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
