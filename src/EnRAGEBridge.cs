@@ -2635,7 +2635,8 @@ namespace EnRAGEPlayerFactionExtension
                 Log.Write("WARNING: NemesisMod.RegardOfRecord(NemesisRecord) not found; rank-based Hacia ti cannot be drawn.");
 
             MethodInfo notorietyOf = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
-                m.Name == "NotorietyOf" && m.GetParameters().Length == 1 && m.ReturnType == typeof(int));
+                m.Name == "NotorietyOf" && m.GetParameters().Length == 1 && m.ReturnType == typeof(int) &&
+                m.GetParameters()[0].ParameterType == _gangType);
             PatchIfFound(notorietyOf, nameof(FounderPatches.PlayerFactionMissionPrestigePostfix), false);
             if (notorietyOf == null)
                 Log.Write("Mission prestige postfix unavailable: NotorietyOf(Gang) was not found.");
