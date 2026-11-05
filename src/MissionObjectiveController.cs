@@ -147,7 +147,7 @@ namespace EnRAGEPlayerFactionExtension
                     if (guard == null || !guard.Exists()) continue;
                     ENTITY.SET_ENTITY_AS_MISSION_ENTITY(guard.Handle, true, true);
                     guard.Accuracy = 20 + _faction.MissionDifficulty * 12;
-                    guard.Weapons.Give((uint)WeaponHash.RevolverCattleman, 36 + _faction.MissionDifficulty * 18);
+                    guard.Weapons.Give((uint)eWeapon.RevolverCattleman, 36 + _faction.MissionDifficulty * 18);
                     guard.Task.Combat(player, -1);
                     _faction.MissionConvoyEnemyHandles.Add(guard.Handle);
                 }
