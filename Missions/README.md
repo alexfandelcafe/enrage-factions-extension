@@ -12,7 +12,7 @@ La primera vez se copia `defaults.json` a esa carpeta. **No se sobrescriben arch
 
 Crea un archivo `.json` nuevo en esa carpeta. Puedes poner una sola misión como objeto JSON o varias dentro de `{"missions":[...]}`. No hace falta modificar ni recompilar la DLL. El catálogo vuelve a cargarse cuando le pides el siguiente contrato y no hay una misión activa; si no ves los cambios, reinicia el juego.
 
-Cada misión necesita un `id` único, `title`, `objectiveType` y recompensas. Ejemplo mínimo:
+Cada misión necesita un `id` único, `title`, `objectiveType`, `weight` y los valores de recompensa. Ejemplo mínimo:
 
 ```json
 {
@@ -69,4 +69,4 @@ Los nombres de los campos son sensibles al formato JSON: usa comillas dobles y s
 
 ## Editar o desactivar contratos incluidos
 
-Edita `defaults.json` en la carpeta del juego para cambiar los seis contratos iniciales. Puedes desactivar uno quitándolo del arreglo `missions`, o cambiar su `weight` a `0` para impedir que se seleccione. Los archivos adicionales se cargan después de `defaults.json` y pueden sobrescribir una misión predeterminada si reutilizan exactamente el mismo `id`. Guarda una copia de seguridad antes de actualizar la extensión.
+Edita `defaults.json` en la carpeta del juego para cambiar los seis contratos iniciales. Puedes desactivar uno quitándolo del arreglo `missions`, o cambiar su `weight` a `0` para impedir que se seleccione. Los archivos adicionales se cargan después de `defaults.json` y pueden sobrescribir una misión predeterminada si reutilizan exactamente el mismo `id`. Deja al menos una misión con `weight` mayor que cero; si no hay contratos habilitados, el selector de la versión actual puede recurrir a la primera definición disponible. Guarda una copia de seguridad antes de actualizar la extensión. Evita borrar o renombrar el `id` de un contrato mientras esa misión está activa, porque el progreso guardado identifica el contrato por ese ID.
