@@ -28,14 +28,6 @@ namespace EnRAGEPlayerFactionExtension
         private const string SupplyCacheModel = "p_crate03x";
         private const string TargetSprite = "blip_objective";
         private const int MissionReconnaissance = 0;
-        private const int MissionPatrol = 1;
-        private const int MissionSupplyCache = 2;
-        private const int MissionStakeout = 3;
-        private const int MissionCourier = 4;
-        private const int MissionConvoy = 5;
-        private const int PatrolWaypointCount = 3;
-        private const int StakeoutDurationMs = 18000;
-        private const float StakeoutRadius = 35f;
 
         private readonly EnRAGEBridge _bridge;
         private readonly PlayerFactionData _faction;
@@ -900,11 +892,6 @@ namespace EnRAGEPlayerFactionExtension
             return MissionCatalog.Get(missionType).Title;
         }
 
-        private static string GetMissionStartInstruction(int missionType)
-        {
-            return MissionCatalog.Get(missionType).StartInstruction;
-        }
-
         private static string GetMissionObjectiveBlipName(PlayerFactionData faction)
         {
             if (faction == null) return "Objetivo de misión";
@@ -1413,27 +1400,6 @@ namespace EnRAGEPlayerFactionExtension
                 if (!MAP.DOES_BLIP_EXIST(_targetBlip)) _targetBlip = 0;
             }
             catch (Exception ex) { Log.Write("Mission objective blip removal warning: " + ex.Message); }
-        }
-
-        private void Notify(string message)
-        {
-            try
-            {
-                object instance = _bridge.MainInstance;
-                if (instance != null)
-                {
-                    MethodInfo method = instance.GetType().GetMethods(Flags).FirstOrDefault(m =>
-                        m.Name == "ShowNotification" && m.GetParameters().Length == 1 &&
-                        m.GetParameters()[0].ParameterType == typeof(string));
-                    if (method != null)
-                    {
-                        method.Invoke(instance, new object[] { "enRAGE - " + message });
-                        return;
-                    }
-                }
-            }
-            catch (Exception ex) { Log.Write("Mission notification warning: " + ex.Message); }
-            Log.Write("MISSION: " + message);
         }
 
         private void SaveFaction()
