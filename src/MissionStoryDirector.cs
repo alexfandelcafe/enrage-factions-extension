@@ -56,7 +56,7 @@ namespace EnRAGEPlayerFactionExtension
             MissionDefinition definition = MissionCatalog.Get(missionType);
             QueueDialogue(definition.Briefing != null && definition.Briefing.Count > 0
                 ? definition.Briefing.ToArray()
-                : GetOpeningLines(definition, difficulty));
+                : new[] { "ENCARGADO: " + definition.StartInstruction });
         }
 
         internal void OnCheckpoint(int missionType, int objectiveIndex)
