@@ -1133,6 +1133,11 @@ namespace EnRAGEPlayerFactionExtension
                             _story.OnObjectiveInteraction(player, "RECUPERACIÓN: Revisas las cajas y preparas las provisiones para el regreso.");
                             AdvanceMissionToReturn("Has recuperado las provisiones del alijo.");
                         }
+                        else if (_supplyCacheSpawnFailures >= 3 &&
+                            (_supplyCache == null || !_supplyCache.Exists()))
+                        {
+                            AdvanceMissionToReturn("No se pudo materializar el alijo físico tras varios intentos. El encargo se cierra para evitar que quede bloqueado.");
+                        }
                     }
                 }
                 else if (objectiveType == MissionObjectiveType.DeliverDispatch)
