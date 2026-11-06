@@ -10,7 +10,8 @@ namespace EnRAGEPlayerFactionExtension
 {
     internal enum MissionObjectiveType
     {
-        ReachLocation, PatrolRoute, RecoverSupplies, HoldArea, DeliverDispatch, InterceptConvoy
+        ReachLocation, PatrolRoute, RecoverSupplies, HoldArea, DeliverDispatch, InterceptConvoy,
+        EliminateTargets, DestroyTarget, InvestigateArea, RescuePrisoner, HuntAnimal, InteractTarget, EscapeArea
     }
 
     [DataContract]
@@ -45,6 +46,25 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Name = "lootLines", Order = 25)] public List<string> LootLines { get; set; }
         [DataMember(Name = "contactLines", Order = 26)] public List<string> ContactLines { get; set; }
         [DataMember(Name = "handoverLines", Order = 27)] public List<string> HandoverLines { get; set; }
+        [DataMember(Name = "targetCount", Order = 28)] public int TargetCount { get; set; }
+        [DataMember(Name = "guardCount", Order = 29)] public int GuardCount { get; set; }
+        [DataMember(Name = "enemyAccuracy", Order = 30)] public int EnemyAccuracy { get; set; }
+        [DataMember(Name = "enemyAmmo", Order = 31)] public int EnemyAmmo { get; set; }
+        [DataMember(Name = "enemyWeaponName", Order = 32)] public string EnemyWeaponName { get; set; }
+        [DataMember(Name = "enemyModels", Order = 33)] public List<string> EnemyModels { get; set; }
+        [DataMember(Name = "targetPedModel", Order = 34)] public string TargetPedModel { get; set; }
+        [DataMember(Name = "targetPropModel", Order = 35)] public string TargetPropModel { get; set; }
+        [DataMember(Name = "targetVehicleModel", Order = 36)] public string TargetVehicleModel { get; set; }
+        [DataMember(Name = "targetPromptLabel", Order = 37)] public string TargetPromptLabel { get; set; }
+        [DataMember(Name = "useFixedTarget", Order = 38)] public bool UseFixedTarget { get; set; }
+        [DataMember(Name = "targetX", Order = 39)] public float TargetX { get; set; }
+        [DataMember(Name = "targetY", Order = 40)] public float TargetY { get; set; }
+        [DataMember(Name = "targetZ", Order = 41)] public float TargetZ { get; set; }
+        [DataMember(Name = "targetHeading", Order = 42)] public float TargetHeading { get; set; }
+        [DataMember(Name = "waypointSpacing", Order = 43)] public float WaypointSpacing { get; set; }
+        [DataMember(Name = "steps", Order = 44)] public List<MissionStepDefinition> Steps { get; set; }
+
+        [IgnoreDataMember] internal List<MissionDefinition> ResolvedSteps { get; private set; }
 
         [IgnoreDataMember]
         internal int Id { get { return _runtimeId; } set { _runtimeId = value; } }
@@ -110,7 +130,105 @@ namespace EnRAGEPlayerFactionExtension
             LootLines = CleanLines(LootLines);
             ContactLines = CleanLines(ContactLines);
             HandoverLines = CleanLines(HandoverLines);
+            EnemyModels = EnemyModels == null
+                ? new List<string>()
+                : EnemyModels.Where(model => !string.IsNullOrWhiteSpace(model)).Select(model => model.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList();
+            EnemyWeaponName = string.IsNullOrWhiteSpace(EnemyWeaponName) ? string.Empty : EnemyWeaponName.Trim();
+            TargetPedModel = string.IsNullOrWhiteSpace(TargetPedModel) ? string.Empty : TargetPedModel.Trim();
+            TargetPropModel = string.IsNullOrWhiteSpace(TargetPropModel) ? string.Empty : TargetPropModel.Trim();
+            TargetVehicleModel = string.IsNullOrWhiteSpace(TargetVehicleModel) ? string.Empty : TargetVehicleModel.Trim();
+            TargetPromptLabel = string.IsNullOrWhiteSpace(TargetPromptLabel) ? string.Empty : TargetPromptLabel.Trim();
+            TargetCount = Math.Max(1, Math.Min(12, TargetCount <= 0 ? 1 : TargetCount));
+            GuardCount = Math.Max(0, Math.Min(12, GuardCount));
+            EnemyAccuracy = Math.Max(1, Math.Min(100, EnemyAccuracy <= 0 ? 35 : EnemyAccuracy));
+            EnemyAmmo = Math.Max(1, Math.Min(500, EnemyAmmo <= 0 ? 48 : EnemyAmmo));
+            WaypointSpacing = Clamp(WaypointSpacing <= 0f ? 70f : WaypointSpacing, 15f, 300f);
+            if (UseFixedTarget && TargetX == 0f && TargetY == 0f && TargetZ == 0f)
+            {
+                error = "useFixedTarget is true but targetX/targetY/targetZ are all zero";
+                return false;
+            }
+
+            Steps = Steps ?? new List<MissionStepDefinition>();
+            ResolvedSteps = new List<MissionDefinition>();
+            if (Steps.Count > 0)
+            {
+                foreach (MissionStepDefinition step in Steps)
+                {
+                    if (step == null || string.IsNullOrWhiteSpace(step.ObjectiveType))
+                    {
+                        error = "every step needs an objectiveType";
+                        return false;
+                    }
+                    MissionDefinition resolved = ApplyStep(step);
+                    string stepError;
+                    if (!resolved.Normalize(out stepError))
+                    {
+                        error = "invalid step '" + (step.Title ?? step.Id ?? "?") + "': " + stepError;
+                        return false;
+                    }
+                    ResolvedSteps.Add(resolved);
+                }
+            }
             return true;
+        }
+
+        internal MissionDefinition GetStep(int stepIndex)
+        {
+            if (ResolvedSteps == null || ResolvedSteps.Count == 0) return this;
+            return ResolvedSteps[Math.Max(0, Math.Min(ResolvedSteps.Count - 1, stepIndex))];
+        }
+
+        internal bool HasNextStep(int stepIndex)
+        {
+            return ResolvedSteps != null && stepIndex + 1 < ResolvedSteps.Count;
+        }
+
+        private MissionDefinition ApplyStep(MissionStepDefinition step)
+        {
+            var resolved = (MissionDefinition)MemberwiseClone();
+            resolved.Steps = new List<MissionStepDefinition>();
+            resolved.ResolvedSteps = new List<MissionDefinition>();
+            if (!string.IsNullOrWhiteSpace(step.Id)) resolved.Key = step.Id;
+            if (!string.IsNullOrWhiteSpace(step.Title)) resolved.Title = step.Title;
+            if (!string.IsNullOrWhiteSpace(step.StartInstruction)) resolved.StartInstruction = step.StartInstruction;
+            if (!string.IsNullOrWhiteSpace(step.ObjectiveType)) resolved.ObjectiveTypeName = step.ObjectiveType;
+            if (step.WaypointCount.HasValue) resolved.WaypointCount = step.WaypointCount.Value;
+            if (step.TargetDistance.HasValue) resolved.TargetDistance = step.TargetDistance.Value;
+            if (step.ObjectiveRadius.HasValue) resolved.ObjectiveRadius = step.ObjectiveRadius.Value;
+            if (step.InteractionRadius.HasValue) resolved.InteractionRadius = step.InteractionRadius.Value;
+            if (step.AreaRadius.HasValue) resolved.AreaRadius = step.AreaRadius.Value;
+            if (step.DurationSeconds.HasValue) resolved.DurationSeconds = step.DurationSeconds.Value;
+            if (step.EncounterAtSeconds.HasValue) resolved.EncounterAtSeconds = step.EncounterAtSeconds.Value;
+            if (step.SpawnEncounter.HasValue) resolved.SpawnEncounter = step.SpawnEncounter.Value;
+            if (step.TargetCount.HasValue) resolved.TargetCount = step.TargetCount.Value;
+            if (step.GuardCount.HasValue) resolved.GuardCount = step.GuardCount.Value;
+            if (step.EnemyAccuracy.HasValue) resolved.EnemyAccuracy = step.EnemyAccuracy.Value;
+            if (step.EnemyAmmo.HasValue) resolved.EnemyAmmo = step.EnemyAmmo.Value;
+            if (step.EnemyWeaponName != null) resolved.EnemyWeaponName = step.EnemyWeaponName;
+            if (step.EnemyModels != null) resolved.EnemyModels = step.EnemyModels;
+            if (step.TargetPedModel != null) resolved.TargetPedModel = step.TargetPedModel;
+            if (step.TargetPropModel != null) resolved.TargetPropModel = step.TargetPropModel;
+            if (step.TargetVehicleModel != null) resolved.TargetVehicleModel = step.TargetVehicleModel;
+            if (step.PromptLabel != null) resolved.PromptLabel = step.PromptLabel;
+            if (step.FirstPromptLabel != null) resolved.FirstPromptLabel = step.FirstPromptLabel;
+            if (step.SecondPromptLabel != null) resolved.SecondPromptLabel = step.SecondPromptLabel;
+            if (step.TargetPromptLabel != null) resolved.TargetPromptLabel = step.TargetPromptLabel;
+            if (step.UseFixedTarget.HasValue) resolved.UseFixedTarget = step.UseFixedTarget.Value;
+            if (step.TargetX.HasValue) resolved.TargetX = step.TargetX.Value;
+            if (step.TargetY.HasValue) resolved.TargetY = step.TargetY.Value;
+            if (step.TargetZ.HasValue) resolved.TargetZ = step.TargetZ.Value;
+            if (step.TargetHeading.HasValue) resolved.TargetHeading = step.TargetHeading.Value;
+            if (step.WaypointSpacing.HasValue) resolved.WaypointSpacing = step.WaypointSpacing.Value;
+            if (step.Briefing != null) resolved.Briefing = step.Briefing;
+            if (step.CheckpointLines != null) resolved.CheckpointLines = step.CheckpointLines;
+            if (step.EncounterLines != null) resolved.EncounterLines = step.EncounterLines;
+            if (step.LootLines != null) resolved.LootLines = step.LootLines;
+            if (step.ContactLines != null) resolved.ContactLines = step.ContactLines;
+            if (step.HandoverLines != null) resolved.HandoverLines = step.HandoverLines;
+            if (step.ReturnLines != null) resolved.ReturnLines = step.ReturnLines;
+            if (step.CompletionLine != null) resolved.CompletionLine = step.CompletionLine;
+            return resolved;
         }
 
         internal static bool TryParseObjectiveType(string value, out MissionObjectiveType objectiveType)
@@ -144,6 +262,50 @@ namespace EnRAGEPlayerFactionExtension
                 default: return 260f;
             }
         }
+    }
+
+    [DataContract]
+    internal sealed class MissionStepDefinition
+    {
+        [DataMember(Name = "id", Order = 1)] public string Id { get; set; }
+        [DataMember(Name = "title", Order = 2)] public string Title { get; set; }
+        [DataMember(Name = "startInstruction", Order = 3)] public string StartInstruction { get; set; }
+        [DataMember(Name = "objectiveType", Order = 4)] public string ObjectiveType { get; set; }
+        [DataMember(Name = "waypointCount", Order = 5)] public int? WaypointCount { get; set; }
+        [DataMember(Name = "targetDistance", Order = 6)] public float? TargetDistance { get; set; }
+        [DataMember(Name = "objectiveRadius", Order = 7)] public float? ObjectiveRadius { get; set; }
+        [DataMember(Name = "interactionRadius", Order = 8)] public float? InteractionRadius { get; set; }
+        [DataMember(Name = "areaRadius", Order = 9)] public float? AreaRadius { get; set; }
+        [DataMember(Name = "durationSeconds", Order = 10)] public int? DurationSeconds { get; set; }
+        [DataMember(Name = "encounterAtSeconds", Order = 11)] public int? EncounterAtSeconds { get; set; }
+        [DataMember(Name = "spawnEncounter", Order = 12)] public bool? SpawnEncounter { get; set; }
+        [DataMember(Name = "targetCount", Order = 13)] public int? TargetCount { get; set; }
+        [DataMember(Name = "guardCount", Order = 14)] public int? GuardCount { get; set; }
+        [DataMember(Name = "enemyAccuracy", Order = 15)] public int? EnemyAccuracy { get; set; }
+        [DataMember(Name = "enemyAmmo", Order = 16)] public int? EnemyAmmo { get; set; }
+        [DataMember(Name = "enemyWeaponName", Order = 17)] public string EnemyWeaponName { get; set; }
+        [DataMember(Name = "enemyModels", Order = 18)] public List<string> EnemyModels { get; set; }
+        [DataMember(Name = "targetPedModel", Order = 19)] public string TargetPedModel { get; set; }
+        [DataMember(Name = "targetPropModel", Order = 20)] public string TargetPropModel { get; set; }
+        [DataMember(Name = "targetVehicleModel", Order = 21)] public string TargetVehicleModel { get; set; }
+        [DataMember(Name = "promptLabel", Order = 22)] public string PromptLabel { get; set; }
+        [DataMember(Name = "firstPromptLabel", Order = 23)] public string FirstPromptLabel { get; set; }
+        [DataMember(Name = "secondPromptLabel", Order = 24)] public string SecondPromptLabel { get; set; }
+        [DataMember(Name = "targetPromptLabel", Order = 25)] public string TargetPromptLabel { get; set; }
+        [DataMember(Name = "useFixedTarget", Order = 26)] public bool? UseFixedTarget { get; set; }
+        [DataMember(Name = "targetX", Order = 27)] public float? TargetX { get; set; }
+        [DataMember(Name = "targetY", Order = 28)] public float? TargetY { get; set; }
+        [DataMember(Name = "targetZ", Order = 29)] public float? TargetZ { get; set; }
+        [DataMember(Name = "targetHeading", Order = 30)] public float? TargetHeading { get; set; }
+        [DataMember(Name = "waypointSpacing", Order = 31)] public float? WaypointSpacing { get; set; }
+        [DataMember(Name = "briefing", Order = 32)] public List<string> Briefing { get; set; }
+        [DataMember(Name = "checkpointLines", Order = 33)] public List<string> CheckpointLines { get; set; }
+        [DataMember(Name = "encounterLines", Order = 34)] public List<string> EncounterLines { get; set; }
+        [DataMember(Name = "lootLines", Order = 35)] public List<string> LootLines { get; set; }
+        [DataMember(Name = "contactLines", Order = 36)] public List<string> ContactLines { get; set; }
+        [DataMember(Name = "handoverLines", Order = 37)] public List<string> HandoverLines { get; set; }
+        [DataMember(Name = "returnLines", Order = 38)] public List<string> ReturnLines { get; set; }
+        [DataMember(Name = "completionLine", Order = 39)] public string CompletionLine { get; set; }
     }
 
     [DataContract]
@@ -190,6 +352,24 @@ namespace EnRAGEPlayerFactionExtension
             Log.Write("Mission definition ID " + id + " is not present in the loaded catalogue.");
             lock (Sync)
                 return _definitions.Count > 0 ? _definitions[0] : CreateEmergencyFallback();
+        }
+
+        internal static MissionDefinition GetStep(int id, int stepIndex)
+        {
+            return Get(id).GetStep(stepIndex);
+        }
+
+        internal static bool HasNextStep(int id, int stepIndex)
+        {
+            return Get(id).HasNextStep(stepIndex);
+        }
+
+        internal static int GetStepCount(int id)
+        {
+            MissionDefinition definition = Get(id);
+            return definition.ResolvedSteps != null && definition.ResolvedSteps.Count > 0
+                ? definition.ResolvedSteps.Count
+                : 1;
         }
 
         internal static int DetermineDifficulty(int completed, Random random)
