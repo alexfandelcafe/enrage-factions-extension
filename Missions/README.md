@@ -10,7 +10,7 @@ La primera vez se copia `defaults.json` a esa carpeta. **No se sobrescriben arch
 
 ## Añadir una misión
 
-Crea un archivo `.json` nuevo en esa carpeta. Puedes poner una sola misión como objeto JSON o varias dentro de `{"missions":[...]}`. No hace falta modificar ni recompilar la DLL. Reinicia el juego después de editar los archivos para volver a cargar el catálogo.
+Crea un archivo `.json` nuevo en esa carpeta. Puedes poner una sola misión como objeto JSON o varias dentro de `{"missions":[...]}`. No hace falta modificar ni recompilar la DLL. El catálogo vuelve a cargarse cuando le pides el siguiente contrato y no hay una misión activa; si no ves los cambios, reinicia el juego.
 
 Cada misión necesita un `id` único, `title`, `objectiveType` y recompensas. Ejemplo mínimo:
 
@@ -59,13 +59,14 @@ La extensión admite archivos de misión adicionales sin una cantidad máxima pr
 - `objectiveRadius`: radio de llegada al punto.
 - `interactionRadius`: radio de interacción; para convoy, define el alcance del prompt.
 - `areaRadius`, `durationSeconds`, `encounterAtSeconds`: parámetros de `HoldArea`.
+- `spawnEncounter`: activa (`true`) o desactiva (`false`) el encuentro hostil de una misión `HoldArea`.
 - `promptLabel`: texto del prompt para recoger provisiones o saquear el convoy.
 - `firstPromptLabel`, `secondPromptLabel`: textos de los prompts de conversación y entrega.
-- `briefing`, `checkpointLines`, `encounterLines`, `returnLines`: diálogos asociados a cada fase.
+- `briefing`, `checkpointLines`, `encounterLines`, `lootLines`, `contactLines`, `handoverLines`, `returnLines`, `completionLine`: diálogos editables del encargo, incluido el saqueo y el intercambio con el contacto.
 - `weight`: frecuencia relativa de selección. Los contratos recientes se excluyen de la selección inmediata si hay otras misiones disponibles.
 
 Los nombres de los campos son sensibles al formato JSON: usa comillas dobles y separa cada propiedad con comas. Los valores de recompensa se escalan un 30 % por nivel de dificultad, igual que los contratos originales.
 
 ## Editar o desactivar contratos incluidos
 
-Edita `defaults.json` en la carpeta del juego para cambiar los seis contratos iniciales. Puedes desactivar uno borrándolo de ese archivo, o cambiar su peso a `0` para reducir su aparición. Guarda una copia de seguridad antes de actualizar la extensión.
+Edita `defaults.json` en la carpeta del juego para cambiar los seis contratos iniciales. Puedes desactivar uno quitándolo del arreglo `missions`, o cambiar su `weight` a `0` para impedir que se seleccione. Los archivos adicionales se cargan después de `defaults.json` y pueden sobrescribir una misión predeterminada si reutilizan exactamente el mismo `id`. Guarda una copia de seguridad antes de actualizar la extensión.
