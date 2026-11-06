@@ -100,7 +100,10 @@
       "returnLines": [
         "ENCARGADO: Las provisiones valen poco si llevas enemigos hasta el campamento. Bien hecho al despejar la zona."
       ],
-      "completionLine": "Las provisiones ya están a salvo. La banda podrá utilizarlas."
+      "completionLine": "Las provisiones ya están a salvo. La banda podrá utilizarlas.",
+      "lootLines": [
+        "ENCARGADO: La zona está despejada. Usa las provisiones que puedas cargar y vuelve sin dejar rastro."
+      ]
     },
     {
       "id": "stakeout",
@@ -169,7 +172,14 @@
       "returnLines": [
         "ENCARGADO: Un despacho entregado sin levantar sospechas. Regresa con las manos libres."
       ],
-      "completionLine": "El contacto confirmó la entrega. La banda recibe su pago."
+      "completionLine": "El contacto confirmó la entrega. La banda recibe su pago.",
+      "contactLines": [
+        "CONTACTO: Creía que mandarían a otro. ¿Traes el despacho?",
+        "Tú: Primero dime si la ruta sigue limpia. No pienso llevar a mi banda a una trampa."
+      ],
+      "handoverLines": [
+        "CONTACTO: Bien. Que nadie sepa que nos hemos visto. Lleva el resto de vuelta a tu gente."
+      ]
     },
     {
       "id": "convoy",
@@ -204,7 +214,10 @@
       "returnLines": [
         "ENCARGADO: El convoy ha quedado neutralizado. Trae el informe y deja que la banda se ocupe del resto."
       ],
-      "completionLine": "El cargamento está contabilizado. La banda tiene recursos nuevos."
+      "completionLine": "El cargamento está contabilizado. La banda tiene recursos nuevos.",
+      "lootLines": [
+        "ENCARGADO: La carreta está despejada. Registra el cargamento y trae lo que se pueda salvar."
+      ]
     }
   ]
 }
