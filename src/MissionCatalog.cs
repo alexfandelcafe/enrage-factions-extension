@@ -35,7 +35,7 @@ namespace EnRAGEPlayerFactionExtension
             new MissionDefinition(0, "Reconocimiento de ruta", "Visita el punto marcado y regresa al campamento.", MissionObjectiveType.ReachLocation, 5, 25, 5, 3),
             new MissionDefinition(1, "Patrulla de frontera", "Recorre los tres puntos marcados en orden y regresa al campamento.", MissionObjectiveType.PatrolRoute, 8, 35, 8, 2),
             new MissionDefinition(2, "Recuperar provisiones", "Encuentra el alijo, pulsa la tecla contextual para recogerlo y vuelve al campamento.", MissionObjectiveType.RecoverSupplies, 12, 20, 9, 3),
-            new MissionDefinition(3, "Vigilar el cruce", "Llega al cruce y permanece dentro del área marcada durante 18 segundos; después regresa.", MissionObjectiveType.HoldArea, 6, 30, 7, 2),
+            new MissionDefinition(3, "Vigilar el cruce", "Observa la ruta durante 18 segundos dentro del perímetro marcado; si aparece una partida, despeja el cruce antes de regresar.", MissionObjectiveType.HoldArea, 6, 30, 7, 2),
             new MissionDefinition(4, "Entregar el despacho", "Llega al punto de encuentro, pulsa la tecla contextual y vuelve al campamento.", MissionObjectiveType.DeliverDispatch, 5, 45, 8, 2),
             new MissionDefinition(5, "Interceptar un convoy", "Localiza la caravana, elimina a sus escoltas y saquea el cargamento antes de regresar al campamento.", MissionObjectiveType.InterceptConvoy, 12, 60, 10, 1)
         };

@@ -36,6 +36,7 @@ namespace EnRAGEPlayerFactionExtension
         private const int MissionConvoy = 5;
         private const int PatrolWaypointCount = 3;
         private const int StakeoutDurationMs = 18000;
+        private const float StakeoutRadius = 35f;
 
         private readonly EnRAGEBridge _bridge;
         private readonly PlayerFactionData _faction;
@@ -59,6 +60,7 @@ namespace EnRAGEPlayerFactionExtension
         private int _lastMissionProgressTickAt;
         private int _nextMissionProgressSaveAt;
         private bool _missionTimerInitialized;
+        private int _nextStakeoutStatusAt;
         private bool _promptArmed = true;
 
         internal CampMissionGiver(EnRAGEBridge bridge, PlayerFactionData faction)
@@ -608,7 +610,7 @@ namespace EnRAGEPlayerFactionExtension
                         ? "El convoy está despejado. Busca el cargamento y pulsa la tecla contextual junto a la carreta."
                         : "Intercepta el convoy y elimina a todos los escoltas antes de saquear el cargamento.";
                 else if (_faction.MissionType == MissionStakeout)
-                    status = "Vigila el cruce durante 18 segundos. El tiempo solo cuenta mientras permanezcas dentro del área marcada.";
+                    status = "Vigila el cruce durante 18 segundos dentro del perímetro marcado. El reloj se pausa si te alejas; puede aparecer una partida.";
                 else if (_faction.MissionType == MissionPatrol)
                     status = "Patrulla activa: visita el punto " + (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + " y continúa con los siguientes.";
                 else
@@ -645,6 +647,7 @@ namespace EnRAGEPlayerFactionExtension
             _missionTimerInitialized = false;
             _lastMissionProgressTickAt = 0;
             _nextMissionProgressSaveAt = 0;
+            _nextStakeoutStatusAt = 0;
             SetMissionTarget(centre, 0);
             _faction.MissionStage = 1;
             SaveFaction();
@@ -848,8 +851,7 @@ namespace EnRAGEPlayerFactionExtension
                             SaveFaction();
                             RemoveTargetBlip();
                             EnsureTargetBlip();
-                            Notify("Punto de patrulla inspeccionado. Continúa hacia el punto " +
-                                (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + ".");
+                            _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex);
                         }
                         else
                         {
@@ -957,6 +959,10 @@ namespace EnRAGEPlayerFactionExtension
                 else if (_faction.MissionType == MissionStakeout)
                 {
                     int now = Game.GameTime;
+                    bool insidePerimeter = distance <= StakeoutRadius;
+
+                    // Credit elapsed time while inside. The former < 1000 ms gate discarded progress
+                    // during script stalls and streaming hitches, causing the objective to stall.
                     if (!_missionTimerInitialized)
                     {
                         _lastMissionProgressTickAt = now;
@@ -965,16 +971,44 @@ namespace EnRAGEPlayerFactionExtension
                     else
                     {
                         int elapsed = now - _lastMissionProgressTickAt;
-                        if (distance <= 20f && elapsed > 0 && elapsed < 1000)
-                            _faction.MissionWaitProgressMs = Math.Min(StakeoutDurationMs, _faction.MissionWaitProgressMs + elapsed);
+                        if (insidePerimeter && elapsed > 0)
+                        {
+                            int creditedElapsed = Math.Min(elapsed, 2000);
+                            _faction.MissionWaitProgressMs = Math.Min(
+                                StakeoutDurationMs, _faction.MissionWaitProgressMs + creditedElapsed);
+                        }
                         _lastMissionProgressTickAt = now;
                     }
 
-                    if (distance <= 20f && !_faction.MissionObjectiveReady)
+                    if (insidePerimeter && !_faction.MissionObjectiveReady)
                     {
                         _faction.MissionObjectiveReady = true;
+                        _nextStakeoutStatusAt = now + 1000;
                         SaveFaction();
                         _story.OnCheckpoint(_faction.MissionType, 0);
+                    }
+
+                    if (_faction.MissionObjectiveReady && now >= _nextStakeoutStatusAt)
+                    {
+                        _nextStakeoutStatusAt = now + 5000;
+                        if (!insidePerimeter && _faction.MissionWaitProgressMs < StakeoutDurationMs)
+                        {
+                            _story.ShowMissionStatus(
+                                "VIGILANCIA: fuera del perímetro; el reloj está detenido. Regresa al punto marcado.", 2300);
+                        }
+                        else if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
+                                 _objectiveController.EncounterSpawned && !_objectiveController.AllGuardsDefeated())
+                        {
+                            _story.ShowMissionStatus(
+                                "VIGILANCIA: el tiempo terminó. Neutraliza a los atacantes para asegurar el cruce.", 2300);
+                        }
+                        else if (_faction.MissionWaitProgressMs < StakeoutDurationMs)
+                        {
+                            int secondsRemaining = (StakeoutDurationMs - _faction.MissionWaitProgressMs + 999) / 1000;
+                            _story.ShowMissionStatus(
+                                "VIGILANCIA: quedan " + secondsRemaining +
+                                " segundos. Mantente dentro del perímetro marcado.", 2200);
+                        }
                     }
 
                     if (now >= _nextMissionProgressSaveAt)
@@ -989,17 +1023,20 @@ namespace EnRAGEPlayerFactionExtension
                         _faction.MissionObjectiveIndex = 1;
                         SaveFaction();
                         if (_objectiveController.EncounterSpawned)
-                        {
                             _story.OnEncounterStarted(_faction.MissionType);
-                        }
                         else
-                            Notify("No se ha podido materializar la emboscada; completa el tiempo de vigilancia y vuelve al campamento.");
+                            _story.ShowMissionStatus(
+                                "VIGILANCIA: no se ha acercado ninguna partida. Termina de observar el cruce.", 2400);
                     }
 
+                    // Complete after 18 seconds if no encounter could be created, or after
+                    // the spawned attackers have been eliminated.
                     if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
                         (!_objectiveController.EncounterSpawned || _objectiveController.AllGuardsDefeated()))
-                        AdvanceMissionToReturn("Has aguantado la vigilancia, neutralizado la amenaza y confirmado quién utiliza el cruce.");
+                        AdvanceMissionToReturn(
+                            "Has vigilado el cruce durante 18 segundos y confirmado quién utiliza la ruta.");
                 }
+                
                 else if (_faction.MissionType == MissionReconnaissance && distance <= 24f)
                 {
                     if (_faction.MissionObjectiveIndex == 0)
@@ -1044,6 +1081,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionWaitProgressMs = 0;
             _missionTimerInitialized = false;
             _lastMissionProgressTickAt = 0;
+            _nextStakeoutStatusAt = 0;
             SaveFaction();
             RemoveTargetBlip();
             EnsureTargetBlip();

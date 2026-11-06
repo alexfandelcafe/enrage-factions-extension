@@ -1020,76 +1020,124 @@ namespace EnRAGEPlayerFactionExtension
                 if (lookType == null || makePiece == null) return null;
 
                 Type zoneType = makePiece.GetParameters()[3].ParameterType;
-                object MakePiece(string key, string[] models, int count, string zone, float size, bool faces)
+                object MakePiece(string key, string model, string zone, float size, bool faces)
                 {
                     object zoneValue = Enum.Parse(zoneType, zone, true);
-                    return makePiece.Invoke(null, new object[] { key, models, count, zoneValue, size, faces, 100 });
+                    // CampKit caches a chosen model by Piece key. Count=1 and private keys prevent
+                    // it from reusing one cached chair, lantern or crate model for several objects.
+                    return makePiece.Invoke(null, new object[] { key, new[] { model }, 1, zoneValue, size, faces, 100 });
                 }
 
-                // Every prop model below is already part of enRAGE's own CampKit fallback lists.
-                string[] tents = { "p_ambtentscrub01b", "p_ambtentgrass01b", "p_ambtentmulch01b", "p_ambtentdirt01x", "p_tentarmy01x", "s_tentcaravan01x", "p_tent_leento01x" };
-                string[] beds = { "p_bedrollopen01x", "p_bedrollopen02x", "p_bedroll01x", "p_bedrollclosed01x" };
-                string[] seats = { "p_stool01x", "p_woodenchair01x", "p_chair05x", "p_bench_log01x", "p_log02x" };
-                string[] lanterns = { "p_lantern05x", "p_lantern09x", "p_lantern01x", "p_lantern02x" };
-                string[] wood = { "p_woodpile01x", "p_woodpile02x", "p_firewood01x", "p_logpile01x" };
-                string[] crates = { "p_cratestack01x", "p_crate03x", "p_crate14x" };
-                string[] barrels = { "p_barrel02x", "p_barrel01x", "p_barrel_wood01x" };
-                string[] chests = { "p_chest01x", "p_chest02x", "p_trunk01x" };
-                string[] whiskey = { "p_bottlewhiskey01x", "p_whiskeybottle01x", "p_bottle008x", "p_bottle01x" };
                 var pieces = new List<object>();
                 string shape;
-                if (tier == 0)
+                void Add(string key, string model, string zone, float size, bool faces = false)
+                {
+                    pieces.Add(MakePiece(key, model, zone, size, faces));
+                }
+
+                // All assets below already occur in native CampKit's established model families.
+                // Each prestige tier is an intentional layout, rather than more copies of generic props.
+                if (tier <= 0)
                 {
                     shape = "Scatter";
-                    pieces.Add(MakePiece("bedroll", beds, 1, "Inner", 0.9f, true));
-                    pieces.Add(MakePiece("seat", seats, 1, "Inner", 0.5f, true));
-                    pieces.Add(MakePiece("lantern", lanterns, 1, "Mid", 0.3f, false));
-                    pieces.Add(MakePiece("wood", wood, 1, "Mid", 0.9f, false));
+                    Add("pf_shelter_lean", "p_tent_leento01x", "Outer", 2.2f, true);
+                    Add("pf_bedroll_rough", "p_bedroll01x", "Inner", 0.9f, true);
+                    Add("pf_seat_log", "p_log02x", "Inner", 0.85f, true);
+                    Add("pf_lantern_05", "p_lantern05x", "Mid", 0.3f, false);
+                    Add("pf_wood_main", "p_woodpile01x", "Mid", 0.9f, false);
                 }
                 else if (tier == 1)
                 {
                     shape = "Cluster";
-                    pieces.Add(MakePiece("tent", tents, 1, "Outer", 2.5f, true));
-                    pieces.Add(MakePiece("bedroll", beds, 2, "Inner", 0.9f, true));
-                    pieces.Add(MakePiece("seat", seats, 2, "Inner", 0.5f, true));
-                    pieces.Add(MakePiece("lantern", lanterns, 1, "Mid", 0.3f, false));
-                    pieces.Add(MakePiece("wood", wood, 1, "Mid", 0.9f, false));
+                    Add("pf_shelter_lean", "p_tent_leento01x", "Outer", 2.2f, true);
+                    Add("pf_tent_scrub", "p_ambtentscrub01b", "Outer", 2.5f, true);
+                    Add("pf_bedroll_rough", "p_bedroll01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_01", "p_bedrollopen01x", "Inner", 0.9f, true);
+                    Add("pf_seat_log", "p_log02x", "Inner", 0.85f, true);
+                    Add("pf_seat_stool", "p_stool01x", "Inner", 0.5f, true);
+                    Add("pf_lantern_05", "p_lantern05x", "Mid", 0.3f, false);
+                    Add("pf_wood_main", "p_woodpile01x", "Mid", 0.9f, false);
+                    Add("pf_blanket_01", "p_blanket01x", "Mid", 0.6f, false);
                 }
                 else if (tier == 2)
                 {
                     shape = "Ring";
-                    pieces.Add(MakePiece("tent", tents, 2, "Outer", 2.5f, true));
-                    pieces.Add(MakePiece("bedroll", beds, 3, "Inner", 0.9f, true));
-                    pieces.Add(MakePiece("seat", seats, 3, "Inner", 0.5f, true));
-                    pieces.Add(MakePiece("lantern", lanterns, 2, "Mid", 0.3f, false));
-                    pieces.Add(MakePiece("wood", wood, 1, "Mid", 0.9f, false));
-                    pieces.Add(MakePiece("crates", crates, 1, "Outer", 1.0f, false));
-                    pieces.Add(MakePiece("barrel", barrels, 1, "Mid", 0.5f, false));
+                    Add("pf_tent_scrub", "p_ambtentscrub01b", "Outer", 2.5f, true);
+                    Add("pf_tent_grass", "p_ambtentgrass01b", "Outer", 2.5f, true);
+                    Add("pf_bedroll_rough", "p_bedroll01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_01", "p_bedrollopen01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_02", "p_bedrollopen02x", "Inner", 0.9f, true);
+                    Add("pf_seat_log", "p_log02x", "Inner", 0.85f, true);
+                    Add("pf_seat_stool", "p_stool01x", "Inner", 0.5f, true);
+                    Add("pf_seat_wooden", "p_woodenchair01x", "Inner", 0.55f, true);
+                    Add("pf_table_wood", "p_tablewood01x", "Inner", 1.2f, false);
+                    Add("pf_lantern_05", "p_lantern05x", "Mid", 0.3f, false);
+                    Add("pf_lantern_09", "p_lantern09x", "Mid", 0.3f, false);
+                    Add("pf_wood_main", "p_woodpile01x", "Mid", 0.9f, false);
+                    Add("pf_wood_stack", "p_woodpile02x", "Mid", 0.9f, false);
+                    Add("pf_crates_main", "p_crate03x", "Outer", 1.0f, false);
+                    Add("pf_barrel_main", "p_barrel02x", "Mid", 0.5f, false);
                 }
                 else if (tier == 3)
                 {
                     shape = "Row";
-                    pieces.Add(MakePiece("tent", tents, 3, "Outer", 2.5f, true));
-                    pieces.Add(MakePiece("bedroll", beds, 4, "Inner", 0.9f, true));
-                    pieces.Add(MakePiece("seat", seats, 4, "Inner", 0.5f, true));
-                    pieces.Add(MakePiece("lantern", lanterns, 3, "Mid", 0.3f, false));
-                    pieces.Add(MakePiece("wood", wood, 1, "Mid", 0.9f, false));
-                    pieces.Add(MakePiece("crate stack", crates, 2, "Outer", 1.2f, false));
-                    pieces.Add(MakePiece("barrel", barrels, 3, "Line", 0.5f, false));
-                    pieces.Add(MakePiece("chest", chests, 1, "Mid", 0.8f, false));
+                    Add("pf_tent_scrub", "p_ambtentscrub01b", "Outer", 2.5f, true);
+                    Add("pf_tent_grass", "p_ambtentgrass01b", "Outer", 2.5f, true);
+                    Add("pf_tent_army", "p_tentarmy01x", "Outer", 3.0f, true);
+                    Add("pf_bedroll_rough", "p_bedroll01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_01", "p_bedrollopen01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_02", "p_bedrollopen02x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_closed", "p_bedrollclosed01x", "Inner", 0.9f, true);
+                    Add("pf_seat_log", "p_log02x", "Inner", 0.85f, true);
+                    Add("pf_seat_stool", "p_stool01x", "Inner", 0.5f, true);
+                    Add("pf_seat_wooden", "p_woodenchair01x", "Inner", 0.55f, true);
+                    Add("pf_seat_chair_05", "p_chair05x", "Inner", 0.55f, true);
+                    Add("pf_table_wood", "p_tablewood01x", "Inner", 1.2f, false);
+                    Add("pf_lantern_05", "p_lantern05x", "Mid", 0.3f, false);
+                    Add("pf_lantern_09", "p_lantern09x", "Mid", 0.3f, false);
+                    Add("pf_lantern_01", "p_lantern01x", "Mid", 0.3f, false);
+                    Add("pf_wood_main", "p_woodpile01x", "Mid", 0.9f, false);
+                    Add("pf_wood_stack", "p_woodpile02x", "Mid", 0.9f, false);
+                    Add("pf_crates_main", "p_crate03x", "Outer", 1.0f, false);
+                    Add("pf_crate_stack", "p_cratestack01x", "Outer", 1.2f, false);
+                    Add("pf_barrel_main", "p_barrel02x", "Mid", 0.5f, false);
+                    Add("pf_barrel_stock", "p_barrel01x", "Line", 0.5f, false);
+                    Add("pf_chest_main", "p_chest01x", "Mid", 0.8f, false);
                 }
                 else
                 {
                     shape = "Cluster";
-                    pieces.Add(MakePiece("tent", tents, 4, "Outer", 2.5f, true));
-                    pieces.Add(MakePiece("bedroll", beds, 5, "Inner", 0.9f, true));
-                    pieces.Add(MakePiece("seat", seats, 5, "Inner", 0.5f, true));
-                    pieces.Add(MakePiece("lantern", lanterns, 4, "Mid", 0.3f, false));
-                    pieces.Add(MakePiece("wood", wood, 2, "Mid", 0.9f, false));
-                    pieces.Add(MakePiece("crate stack", crates, 3, "Outer", 1.2f, false));
-                    pieces.Add(MakePiece("barrel", barrels, 4, "Line", 0.5f, false));
-                    pieces.Add(MakePiece("chest", chests, 2, "Mid", 0.8f, false));
-                    pieces.Add(MakePiece("whiskey", whiskey, 2, "Inner", 0.3f, false));
+                    Add("pf_tent_scrub", "p_ambtentscrub01b", "Outer", 2.5f, true);
+                    Add("pf_tent_grass", "p_ambtentgrass01b", "Outer", 2.5f, true);
+                    Add("pf_tent_army", "p_tentarmy01x", "Outer", 3.0f, true);
+                    Add("pf_tent_dirt", "p_ambtentdirt01x", "Outer", 2.5f, true);
+                    Add("pf_bedroll_rough", "p_bedroll01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_01", "p_bedrollopen01x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_open_02", "p_bedrollopen02x", "Inner", 0.9f, true);
+                    Add("pf_bedroll_closed", "p_bedrollclosed01x", "Inner", 0.9f, true);
+                    Add("pf_seat_log", "p_log02x", "Inner", 0.85f, true);
+                    Add("pf_seat_stool", "p_stool01x", "Inner", 0.5f, true);
+                    Add("pf_seat_wooden", "p_woodenchair01x", "Inner", 0.55f, true);
+                    Add("pf_seat_chair_05", "p_chair05x", "Inner", 0.55f, true);
+                    Add("pf_seat_bench", "p_bench_log01x", "Inner", 0.85f, true);
+                    Add("pf_table_wood", "p_tablewood01x", "Inner", 1.2f, false);
+                    Add("pf_lantern_05", "p_lantern05x", "Mid", 0.3f, false);
+                    Add("pf_lantern_09", "p_lantern09x", "Mid", 0.3f, false);
+                    Add("pf_lantern_01", "p_lantern01x", "Mid", 0.3f, false);
+                    Add("pf_lantern_02", "p_lantern02x", "Mid", 0.3f, false);
+                    Add("pf_wood_main", "p_woodpile01x", "Mid", 0.9f, false);
+                    Add("pf_wood_stack", "p_woodpile02x", "Mid", 0.9f, false);
+                    Add("pf_crates_main", "p_crate03x", "Outer", 1.0f, false);
+                    Add("pf_crate_stack", "p_cratestack01x", "Outer", 1.2f, false);
+                    Add("pf_crate_stack_large", "p_cratestack02x", "Outer", 1.2f, false);
+                    Add("pf_barrel_main", "p_barrel02x", "Mid", 0.5f, false);
+                    Add("pf_barrel_stock", "p_barrel01x", "Line", 0.5f, false);
+                    Add("pf_barrel_wood", "p_barrel_wood01x", "Line", 0.5f, false);
+                    Add("pf_chest_main", "p_chest01x", "Mid", 0.8f, false);
+                    Add("pf_trunk_storage", "p_trunk01x", "Mid", 0.8f, false);
+                    Add("pf_whiskey_bottle", "p_bottlewhiskey01x", "Inner", 0.3f, false);
+                    Add("pf_jug_camp", "p_jug01x", "Mid", 0.3f, false);
+                    Add("pf_saddle_stand", "p_saddlestand01x", "Line", 0.6f, false);
                 }
 
                 object look = Activator.CreateInstance(lookType, true);
@@ -1112,6 +1160,7 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        
         internal void MarkPedAsEnRageOwned(Ped ped)
         {
             if (ped == null || !ped.Exists() || _makeOursMethod == null) return;

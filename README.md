@@ -1,17 +1,17 @@
-# EnRAGE Player Faction Extension — v0.4.2
+# EnRAGE Player Faction Extension — v0.5.0
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
 > Esta guía describe el comportamiento actual del código de `main`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
 
-## Misiones narrativas y encuentros (v0.4.2)
+## Misiones narrativas y encuentros (v0.5.0)
 
 Los contratos comparten ahora un controlador de narrativa, interacción y encuentros:
 
 - **Reconocimiento:** requiere inspeccionar dos puntos diferentes para reconstruir el rastro antes de regresar.
 - **Patrulla:** mantiene tres puntos secuenciales con avisos de progreso.
 - **Provisiones:** el alijo puede estar vigilado; hay que despejar la zona antes de recogerlo. Si el encuentro no puede generarse tras varios intentos, el contrato conserva una salida alternativa.
-- **Vigilancia:** el tiempo cuenta dentro del área y, a partir de los primeros segundos, puede aparecer una emboscada que debe neutralizarse.
+- **Vigilancia (rework):** el contador avanza dentro de un perímetro de 35 m, se pausa al salir y tolera pausas breves del script. Muestra el tiempo restante y, si aparece una emboscada, exige despejar la zona antes de volver. Si el encuentro no se puede crear, el contrato sigue siendo completable.
 - **Despacho:** genera un contacto físico en el punto de encuentro cuando el modelo está disponible y convierte la entrega en una conversación de varias interacciones; hay una alternativa si el NPC no aparece.
 - **Convoy:** mantiene escoltas, saqueo contextual y finalización alternativa si la carreta es destruida o no está disponible.
 - **Narrativa y sonido:** hay líneas de diálogo contextual en subtítulos o notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con limpieza al resolver el encuentro.
@@ -300,9 +300,9 @@ La barra de la facción muestra **PRESTIGIO** en lugar de **NOTORIEDAD**. Utiliz
 | 60–79 | TEMIDA |
 | 80–100 | LEGENDARIA |
 
-El mismo valor selecciona una de cinco configuraciones visuales de `CampKit.CampLooks["player_faction"]`. A medida que aumenta el prestigio, el campamento incorpora progresivamente más elementos —tiendas, camas, asientos, faroles, leña, cajas, barriles, cofres y botellas— y puede cambiar su distribución.
+El mismo valor selecciona una de cinco configuraciones visuales de `CampKit.CampLooks["player_faction"]`. A medida que aumenta el prestigio, el campamento cambia de una parada rudimentaria a un asentamiento más organizado. Cada objeto usa una clave de CampKit exclusiva y un modelo deliberado; se evita reutilizar la misma clave con varios ejemplares, que era lo que producía sillas, faroles y cajas visualmente idénticos. Los niveles amplían el número y la variedad de tiendas, camas, asientos, iluminación y reservas, en lugar de multiplicar un único modelo.
 
-La configuración visual se actualiza al cambiar de etapa. La reconstrucción física se difiere hasta que el jugador esté cerca y la colisión del terreno esté cargada; no se desmonta el campamento a distancia solo para cambiar su aspecto.
+La configuración visual se actualiza al cambiar de etapa y ahora cada pieza tiene su propio identificador y modelo. La reconstrucción física se difiere hasta que el jugador esté cerca y la colisión del terreno esté cargada; no se desmonta el campamento a distancia solo para cambiar su aspecto.
 
 ## Territorio, recursos y opciones nativas
 

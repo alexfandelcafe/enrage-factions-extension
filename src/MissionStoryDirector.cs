@@ -110,6 +110,20 @@ namespace EnRAGEPlayerFactionExtension
             PlayFrontendCue("NAV_UP_DOWN");
         }
 
+        internal void ShowMissionStatus(string line, int duration = 2200)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return;
+            try
+            {
+                if (!TryDisplaySubtitle(line, Math.Max(1200, duration)))
+                    Log.Write("Mission status subtitle API unavailable; status line suppressed: " + line);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission status subtitle warning: " + ex.Message);
+            }
+        }
+
         internal void ShowInteractionHint(string message, int displayMs = 2200)
         {
             if (string.IsNullOrWhiteSpace(message) || Game.GameTime < _nextInteractionHintAt) return;

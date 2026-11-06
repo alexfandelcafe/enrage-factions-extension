@@ -64,7 +64,7 @@ namespace EnRAGEPlayerFactionExtension
             if (missionType != MissionSupplyCache && missionType != MissionStakeout && missionType != MissionConvoy)
                 return;
 
-            float triggerDistance = missionType == MissionConvoy ? 115f : (missionType == MissionStakeout ? 32f : 55f);
+            float triggerDistance = missionType == MissionConvoy ? 115f : (missionType == MissionStakeout ? 35f : 55f);
             if (distance > triggerDistance) return;
             if (missionType == MissionStakeout && _faction.MissionWaitProgressMs < 6000) return;
 
