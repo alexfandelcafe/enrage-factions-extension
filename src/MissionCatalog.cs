@@ -307,11 +307,17 @@ namespace EnRAGEPlayerFactionExtension
 
                 foreach (MissionDefinition definition in entries)
                 {
+                    if (definition == null)
+                    {
+                        Log.Write("Invalid mission in " + Path.GetFileName(path) + ": empty entry.");
+                        continue;
+                    }
+
                     string validationError;
-                    if (definition == null || !definition.Normalize(out validationError))
+                    if (!definition.Normalize(out validationError))
                     {
                         Log.Write("Invalid mission in " + Path.GetFileName(path) + ": " +
-                            (definition == null ? "empty entry" : validationError) + ".");
+                            validationError + ".");
                         continue;
                     }
 
