@@ -165,6 +165,11 @@ namespace EnRAGEPlayerFactionExtension
         private static List<MissionDefinition> _definitions = new List<MissionDefinition>();
         private static Dictionary<int, MissionDefinition> _byId = new Dictionary<int, MissionDefinition>();
 
+        internal static void Initialize()
+        {
+            EnsureLoaded();
+        }
+
         internal static IList<MissionDefinition> GetDefinitions()
         {
             EnsureLoaded();
