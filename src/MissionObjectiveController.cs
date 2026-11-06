@@ -36,6 +36,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             get { Ped courier = ResolveCourier(MissionTarget); return courier != null && courier.Exists(); }
         }
+        internal bool CourierSpawnFailed { get { return _courierSpawnFailures >= 3; } }
 
         internal void Maintain(Ped player)
         {
