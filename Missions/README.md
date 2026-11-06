@@ -45,9 +45,9 @@ Cada misión necesita un `id` único, `title`, `objectiveType` y recompensas. Ej
 
 - `ReachLocation`: visitar uno o varios puntos.
 - `PatrolRoute`: recorrer una ruta de puntos en orden.
-- `RecoverSupplies`: encontrar un alijo, despejar la zona si hay guardias y recogerlo mediante el prompt contextual.
+- `RecoverSupplies`: encontrar un alijo, despejar la zona si hay guardias y recogerlo mediante el prompt contextual. Si el objeto falla en tres intentos al generarse, el contrato se cierra de forma segura.
 - `HoldArea`: mantener la posición durante un tiempo; puede aparecer una emboscada.
-- `DeliverDispatch`: hablar con un contacto y completar la entrega mediante prompts contextuales.
+- `DeliverDispatch`: hablar con un contacto y completar la entrega mediante prompts contextuales. Si el contacto falla tres veces al generarse, se intenta un punto alternativo con un prompt propio; si también falla, se cierra el contrato para evitar un bloqueo.
 - `InterceptConvoy`: derrotar a los escoltas y saquear la carreta mediante el prompt contextual.
 
 La extensión admite archivos de misión adicionales sin una cantidad máxima práctica. Los tipos de objetivo son comportamientos del motor ya implementados: un JSON cambia el contenido, parámetros, diálogos y recompensas, pero no puede inventar un tipo de mecánica completamente nuevo sin ampliar el código.
