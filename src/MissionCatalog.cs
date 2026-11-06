@@ -42,6 +42,9 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Name = "encounterLines", Order = 22)] public List<string> EncounterLines { get; set; }
         [DataMember(Name = "returnLines", Order = 23)] public List<string> ReturnLines { get; set; }
         [DataMember(Name = "completionLine", Order = 24)] public string CompletionLine { get; set; }
+        [DataMember(Name = "lootLines", Order = 25)] public List<string> LootLines { get; set; }
+        [DataMember(Name = "contactLines", Order = 26)] public List<string> ContactLines { get; set; }
+        [DataMember(Name = "handoverLines", Order = 27)] public List<string> HandoverLines { get; set; }
 
         [IgnoreDataMember]
         internal int Id { get { return _runtimeId; } set { _runtimeId = value; } }
@@ -104,6 +107,9 @@ namespace EnRAGEPlayerFactionExtension
             CheckpointLines = CleanLines(CheckpointLines);
             EncounterLines = CleanLines(EncounterLines);
             ReturnLines = CleanLines(ReturnLines);
+            LootLines = CleanLines(LootLines);
+            ContactLines = CleanLines(ContactLines);
+            HandoverLines = CleanLines(HandoverLines);
             return true;
         }
 
