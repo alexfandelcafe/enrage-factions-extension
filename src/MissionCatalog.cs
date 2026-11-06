@@ -33,14 +33,15 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Name = "areaRadius", Order = 13)] public float AreaRadius { get; set; }
         [DataMember(Name = "durationSeconds", Order = 14)] public int DurationSeconds { get; set; }
         [DataMember(Name = "encounterAtSeconds", Order = 15)] public int EncounterAtSeconds { get; set; }
-        [DataMember(Name = "promptLabel", Order = 16)] public string PromptLabel { get; set; }
-        [DataMember(Name = "firstPromptLabel", Order = 17)] public string FirstPromptLabel { get; set; }
-        [DataMember(Name = "secondPromptLabel", Order = 18)] public string SecondPromptLabel { get; set; }
-        [DataMember(Name = "briefing", Order = 19)] public List<string> Briefing { get; set; }
-        [DataMember(Name = "checkpointLines", Order = 20)] public List<string> CheckpointLines { get; set; }
-        [DataMember(Name = "encounterLines", Order = 21)] public List<string> EncounterLines { get; set; }
-        [DataMember(Name = "returnLines", Order = 22)] public List<string> ReturnLines { get; set; }
-        [DataMember(Name = "completionLine", Order = 23)] public string CompletionLine { get; set; }
+        [DataMember(Name = "spawnEncounter", Order = 16)] public bool SpawnEncounter { get; set; }
+        [DataMember(Name = "promptLabel", Order = 17)] public string PromptLabel { get; set; }
+        [DataMember(Name = "firstPromptLabel", Order = 18)] public string FirstPromptLabel { get; set; }
+        [DataMember(Name = "secondPromptLabel", Order = 19)] public string SecondPromptLabel { get; set; }
+        [DataMember(Name = "briefing", Order = 20)] public List<string> Briefing { get; set; }
+        [DataMember(Name = "checkpointLines", Order = 21)] public List<string> CheckpointLines { get; set; }
+        [DataMember(Name = "encounterLines", Order = 22)] public List<string> EncounterLines { get; set; }
+        [DataMember(Name = "returnLines", Order = 23)] public List<string> ReturnLines { get; set; }
+        [DataMember(Name = "completionLine", Order = 24)] public string CompletionLine { get; set; }
 
         [IgnoreDataMember]
         internal int Id { get { return _runtimeId; } set { _runtimeId = value; } }
