@@ -18,6 +18,7 @@ namespace EnRAGEPlayerFactionExtension
         private static readonly string[] GuardModels = { "G_M_M_UniCriminals_01", "G_M_M_UniCriminals_02", "G_M_M_UniDuster_01" };
         private readonly PlayerFactionData _faction;
         private int _nextSpawnAttemptAt;
+        private int _nextVehicleSpawnAttemptAt;
         private int _spawnFailures;
         private int _nextCourierSpawnAttemptAt;
         private int _courierSpawnFailures;
@@ -63,7 +64,7 @@ namespace EnRAGEPlayerFactionExtension
                 objectiveType == MissionObjectiveType.RescuePrisoner)
             {
                 if (distance <= 85f && Game.GameTime >= _nextCourierSpawnAttemptAt &&
-                    _faction.MissionCourierPedHandle == 0)
+                    !CourierAvailable && _courierSpawnFailures < 3)
                 {
                     _nextCourierSpawnAttemptAt = Game.GameTime + 5000;
                     if (!EnsureCourier(target, player)) _courierSpawnFailures++;
@@ -136,10 +137,18 @@ namespace EnRAGEPlayerFactionExtension
                 _spawnFailures = 0;
                 SaveFaction();
             }
+            if (objectiveType == MissionObjectiveType.InterceptConvoy &&
+                _faction.MissionConvoyWagonHandle == 0 &&
+                Game.GameTime >= _nextVehicleSpawnAttemptAt)
+            {
+                _nextVehicleSpawnAttemptAt = Game.GameTime + 5000;
+                if (!EnsureWagon(target)) _vehicleSpawnFailures++;
+                else _vehicleSpawnFailures = 0;
+            }
+
             if (_faction.MissionEncounterSpawned || Game.GameTime < _nextSpawnAttemptAt) return;
 
             _nextSpawnAttemptAt = Game.GameTime + 5000;
-            if (objectiveType == MissionObjectiveType.InterceptConvoy) EnsureWagon(target);
             SpawnGuards(player, target, objectiveType);
             if (_faction.MissionConvoyEnemyHandles.Count > 0)
             {
@@ -232,6 +241,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionEncounterSpawned = false;
             _faction.MissionEncounterProcessId = 0;
             _nextSpawnAttemptAt = 0;
+            _nextVehicleSpawnAttemptAt = 0;
             _nextCourierSpawnAttemptAt = 0;
             _courierSpawnFailures = 0;
             _vehicleSpawnFailures = 0;
@@ -356,8 +366,7 @@ namespace EnRAGEPlayerFactionExtension
             try
             {
                 MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
-                string modelName = definition.ObjectiveType == MissionObjectiveType.RescuePrisoner &&
-                    !string.IsNullOrWhiteSpace(definition.TargetPedModel)
+                string modelName = !string.IsNullOrWhiteSpace(definition.TargetPedModel)
                     ? definition.TargetPedModel
                     : CourierModel;
                 uint hash = MISC.GET_HASH_KEY(modelName);
@@ -413,8 +422,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 Ped courier = new Ped(_faction.MissionCourierPedHandle);
                 MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
-                string modelName = definition.ObjectiveType == MissionObjectiveType.RescuePrisoner &&
-                    !string.IsNullOrWhiteSpace(definition.TargetPedModel)
+                string modelName = !string.IsNullOrWhiteSpace(definition.TargetPedModel)
                     ? definition.TargetPedModel
                     : CourierModel;
                 if (courier.Exists() &&
