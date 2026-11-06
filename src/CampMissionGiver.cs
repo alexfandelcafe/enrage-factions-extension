@@ -681,6 +681,11 @@ namespace EnRAGEPlayerFactionExtension
                         Notify("El convoy está a la vista. Busca cobertura y controla a los escoltas antes de acercarte al cargamento.");
                     }
 
+                    if (distance <= 65f && _faction.MissionObjectiveReady &&
+                        !_objectiveController.IsWagonDestroyedOrMissing() &&
+                        _objectiveController.IsPlayerNearLoot(player, 13f))
+                        _story.ShowInteractionHint("para saquear el cargamento");
+
                     // Requiring proximity prevents a distant firefight from silently advancing the contract.
                     if (distance <= 65f && (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed))
                     {
@@ -712,6 +717,9 @@ namespace EnRAGEPlayerFactionExtension
                         _story.OnEncounterStarted(_faction.MissionType);
                         Notify("Hay hombres vigilando el alijo. Despeja la zona antes de tocar las cajas.");
                     }
+
+                    if (distance <= 12f && _faction.MissionObjectiveIndex >= 2 && _faction.MissionObjectiveReady)
+                        _story.ShowInteractionHint("para recoger las provisiones");
 
                     if (distance <= 5f)
                     {
@@ -745,6 +753,11 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 else if (_faction.MissionType == MissionCourier)
                 {
+                    if (distance <= 7f && _faction.MissionObjectiveReady)
+                        _story.ShowInteractionHint(_faction.MissionObjectiveIndex == 1
+                            ? "para hablar con el contacto"
+                            : "para entregar el despacho");
+
                     if (distance <= 5f)
                     {
                         if (!_faction.MissionObjectiveReady)

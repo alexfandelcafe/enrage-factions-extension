@@ -14,23 +14,18 @@ namespace EnRAGEPlayerFactionExtension
     {
         private const ulong PlaySoundFrontendHash = 0x67C540AA08E4A6F5UL;
         private const ulong TriggerMusicEventHash = 0x706D57B0F50DA710UL;
-        private const ulong RequestAnimDictHash = 0xA862A2AD321F94B4UL;
-        private const ulong HasAnimDictLoadedHash = 0x27FF6FE8009B40CAUL;
-        private const ulong TaskPlayAnimHash = 0xEA47FE3719165B94UL;
         private const ulong TurnPedToFaceEntityHash = 0x5AD23D40115353ACUL;
         private const string CombatMusicStart = "DUEL_GENERAL_START";
         private const string CombatMusicStop = "DUEL_GENERAL_STOP";
         private const string CombatMusicEndStinger = "DUEL_GENERAL_END_OS";
-        private const string InspectionAnimDictionary = "MECH_DYNAMIC@WORLD_PLAYER_DYNAMIC_KNEEL_GROUND@GENERIC@MALE_A@base";
-        private const string InspectionAnimation = "base";
 
         private readonly Action<string> _notify;
         private readonly Queue<string> _dialogue = new Queue<string>();
         private int _nextDialogueAt;
         private int _dialogueGapMs = 2600;
         private bool _combatMusicActive;
-        private bool _inspectionAnimLoaded;
-        private int _nextAnimationRequestAt;
+        private int _nextInteractionHintAt;
+        private int _nextHintFallbackAt;
 
         internal MissionStoryDirector(Action<string> notify)
         {
@@ -39,7 +34,6 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void Tick()
         {
-            MaintainInspectionDictionary();
             if (_dialogue.Count == 0 || Game.GameTime < _nextDialogueAt) return;
             string line = _dialogue.Dequeue();
             try
@@ -57,7 +51,6 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void BeginMission(int missionType, int difficulty, Ped missionGiver, Ped player)
         {
-            RequestInspectionDictionary();
             PlayFrontendCue("SELECT");
             FaceEachOther(missionGiver, player);
             QueueDialogue(GetOpeningLines(missionType, difficulty));
@@ -92,7 +85,8 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void OnObjectiveInteraction(Ped player, string context)
         {
-            PlayInspectionAnimation(player);
+            // Avoid invoking TASK_PLAY_ANIM from the loot path until its runtime behavior
+            // can be validated on the target ScriptHook build. Mission progress is independent.
             PlayFrontendCue("SELECT");
             if (!string.IsNullOrWhiteSpace(context))
                 QueueDialogue(new[] { context }, true);
@@ -101,6 +95,27 @@ namespace EnRAGEPlayerFactionExtension
         internal void PlayReminderCue()
         {
             PlayFrontendCue("NAV_UP_DOWN");
+        }
+
+        internal void ShowInteractionHint(string message, int displayMs = 2200)
+        {
+            if (string.IsNullOrWhiteSpace(message) || Game.GameTime < _nextInteractionHintAt) return;
+            _nextInteractionHintAt = Game.GameTime + 1700;
+            string text = "Pulsa [G] " + message;
+
+            try
+            {
+                if (TryDisplaySubtitle(text, Math.Max(1200, displayMs))) return;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission interaction hint display warning: " + ex.Message);
+            }
+
+            if (Game.GameTime < _nextHintFallbackAt) return;
+            _nextHintFallbackAt = Game.GameTime + 5500;
+            try { _notify(text); }
+            catch (Exception ex) { Log.Write("Mission interaction hint fallback warning: " + ex.Message); }
         }
 
         internal void OnMissionReturning(int missionType)
@@ -251,7 +266,7 @@ namespace EnRAGEPlayerFactionExtension
             _combatMusicActive = false;
         }
 
-        private bool TryDisplaySubtitle(string line)
+        private bool TryDisplaySubtitle(string line, int duration = 4200)
         {
             try
             {
@@ -268,7 +283,7 @@ namespace EnRAGEPlayerFactionExtension
                         parameters[0].ParameterType == typeof(string) &&
                         parameters[1].ParameterType == typeof(int))
                     {
-                        method.Invoke(null, new object[] { line, 4200 });
+                        method.Invoke(null, new object[] { line, duration });
                         return true;
                     }
 
@@ -284,28 +299,6 @@ namespace EnRAGEPlayerFactionExtension
                 Log.Write("Native subtitle display unavailable; falling back to notification: " + ex.Message);
             }
             return false;
-        }
-
-        private void RequestInspectionDictionary()
-        {
-            if (_inspectionAnimLoaded || Game.GameTime < _nextAnimationRequestAt) return;
-            _nextAnimationRequestAt = Game.GameTime + 900;
-            try
-            {
-                Function.Call(RequestAnimDictHash, new InputArgument[] { InspectionAnimDictionary });
-                _inspectionAnimLoaded = Function.Call<bool>(HasAnimDictLoadedHash,
-                    new InputArgument[] { InspectionAnimDictionary });
-            }
-            catch (Exception ex)
-            {
-                Log.Write("Inspection animation dictionary request warning: " + ex.Message);
-            }
-        }
-
-        private void MaintainInspectionDictionary()
-        {
-            if (_inspectionAnimLoaded) return;
-            RequestInspectionDictionary();
         }
 
         private static void PlayFrontendCue(string cue)
@@ -331,26 +324,5 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Mission dialogue facing task warning: " + ex.Message); }
         }
 
-        private bool PlayInspectionAnimation(Ped player)
-        {
-            if (player == null || !player.Exists() || player.IsOnMount || player.IsInVehicle) return false;
-            try
-            {
-                MaintainInspectionDictionary();
-                if (!_inspectionAnimLoaded) return false;
-
-                Function.Call(TaskPlayAnimHash, new InputArgument[]
-                {
-                    player.Handle, InspectionAnimDictionary, true, "base", false,
-                    InspectionAnimation, 1.0f, 1.0f, 1700, 0
-                });
-                return true;
-            }
-            catch (Exception ex)
-            {
-                Log.Write("Mission inspection animation unavailable; interaction continues without it: " + ex.Message);
-                return false;
-            }
-        }
     }
 }

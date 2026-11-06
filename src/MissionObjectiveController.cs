@@ -110,13 +110,13 @@ namespace EnRAGEPlayerFactionExtension
             return true;
         }
 
-        internal bool IsPlayerNearLoot(Ped player)
+        internal bool IsPlayerNearLoot(Ped player, float maxDistance = 8f)
         {
             if (player == null || !player.Exists()) return false;
             Vector3 target = MissionTarget;
             Vehicle wagon = ResolveWagon(target, 250f);
             Vector3 loot = wagon != null && wagon.Exists() ? wagon.Position : target;
-            return loot != Vector3.Zero && player.Position.DistanceTo(loot) <= 8f;
+            return loot != Vector3.Zero && player.Position.DistanceTo(loot) <= maxDistance;
         }
 
         internal bool IsWagonDestroyedOrMissing()
