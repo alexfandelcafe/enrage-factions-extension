@@ -21,7 +21,7 @@ namespace EnRAGEPlayerFactionExtension
         private const string CombatMusicStart = "DUEL_GENERAL_START";
         private const string CombatMusicStop = "DUEL_GENERAL_STOP";
         private const string CombatMusicEndStinger = "DUEL_GENERAL_END_OS";
-        private const string InspectionAnimDictionary = "MECH_DYNAMIC@WORLD_PLAYER_DYNAMIC_KNEEL_GROUND@GENERIC@MALE_A";
+        private const string InspectionAnimDictionary = "MECH_DYNAMIC@WORLD_PLAYER_DYNAMIC_KNEEL_GROUND@GENERIC@MALE_A@base";
         private const string InspectionAnimation = "base";
 
         private readonly Action<string> _notify;
