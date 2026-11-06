@@ -118,6 +118,7 @@
       "areaRadius": 35,
       "durationSeconds": 18,
       "encounterAtSeconds": 6,
+      "spawnEncounter": true,
       "promptLabel": "",
       "firstPromptLabel": "",
       "secondPromptLabel": "",
