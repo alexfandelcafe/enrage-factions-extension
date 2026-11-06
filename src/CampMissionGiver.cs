@@ -100,7 +100,8 @@ namespace EnRAGEPlayerFactionExtension
             bool courierNeedsFallbackDrop = activeObjectiveType == MissionObjectiveType.DeliverDispatch &&
                 _objectiveController.CourierSpawnFailed;
             if (_faction.MissionStage == 1 &&
-                (activeObjectiveType == MissionObjectiveType.RecoverSupplies || courierNeedsFallbackDrop))
+                (activeObjectiveType == MissionObjectiveType.RecoverSupplies ||
+                 activeObjectiveType == MissionObjectiveType.InteractTarget || courierNeedsFallbackDrop))
                 MaintainSupplyCacheProp(player);
             else if (_faction.MissionCachePropHandle != 0)
             {
@@ -922,6 +923,15 @@ namespace EnRAGEPlayerFactionExtension
             MissionCatalog.GetRewards(missionType, _faction.MissionDifficulty, out supplies, out treasury, out prestige);
         }
 
+        private string GetMissionPropModelName()
+        {
+            MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
+            return definition.ObjectiveType == MissionObjectiveType.InteractTarget &&
+                !string.IsNullOrWhiteSpace(definition.TargetPropModel)
+                ? definition.TargetPropModel
+                : SupplyCacheModel;
+        }
+
         private void MaintainSupplyCacheProp(Ped player)
         {
             Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
@@ -931,7 +941,8 @@ namespace EnRAGEPlayerFactionExtension
             if (_supplyCache != null && _supplyCache.Exists())
                 return;
 
-            uint expectedModel = MISC.GET_HASH_KEY(SupplyCacheModel);
+            string modelName = GetMissionPropModelName();
+            uint expectedModel = MISC.GET_HASH_KEY(modelName);
             if (_faction.MissionCachePropHandle != 0)
             {
                 try
@@ -959,15 +970,15 @@ namespace EnRAGEPlayerFactionExtension
 
             try
             {
-                Model model = new Model(SupplyCacheModel);
+                Model model = new Model(modelName);
                 if (!model.IsValid)
                 {
-                    RegisterSupplyCacheSpawnFailure("model is invalid: " + SupplyCacheModel);
+                    RegisterSupplyCacheSpawnFailure("model is invalid: " + modelName);
                     return;
                 }
                 if (!model.IsLoaded && !model.Request(1000))
                 {
-                    RegisterSupplyCacheSpawnFailure("model did not load: " + SupplyCacheModel);
+                    RegisterSupplyCacheSpawnFailure("model did not load: " + modelName);
                     return;
                 }
 
@@ -983,7 +994,8 @@ namespace EnRAGEPlayerFactionExtension
                 _faction.MissionCachePropHandle = created.Handle;
                 _supplyCacheSpawnFailures = 0;
                 SaveFaction();
-                Log.Write("Mission objective prop created. Handle=" + created.Handle + ", position=" + target + ".");
+                Log.Write("Mission objective prop created. Model=" + modelName + ", handle=" + created.Handle +
+                    ", position=" + target + ".");
             }
             catch (Exception ex)
             {
@@ -1012,7 +1024,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 try
                 {
-                    uint expectedModel = MISC.GET_HASH_KEY(SupplyCacheModel);
+                    uint expectedModel = MISC.GET_HASH_KEY(GetMissionPropModelName());
                     Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
                     bool belongsToMission = target != Vector3.Zero &&
                         unchecked((uint)candidate.Model.Hash) == expectedModel &&
