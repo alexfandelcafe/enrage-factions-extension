@@ -33,8 +33,12 @@ namespace EnRAGEPlayerFactionExtension
         private const int MissionStakeout = 3;
         private const int MissionCourier = 4;
         private const int MissionConvoy = 5;
+        private const int MissionEliminateTargets = 6;
+        private const int MissionDestroyTarget = 7;
+        private const int MissionRescuePrisoner = 8;
+        private const int MissionHuntAnimal = 9;
         private const int PatrolWaypointCount = 3;
-        private const int StakeoutDurationMs = 18000;
+        private const int StakeoutDurationMs = 24000;
         private const float StakeoutRadius = 35f;
 
         private readonly EnRAGEBridge _bridge;
@@ -112,7 +116,9 @@ namespace EnRAGEPlayerFactionExtension
             }
             if (_faction.MissionStage == 1 &&
                 (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionStakeout ||
-                 _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy))
+                 _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy ||
+                 _faction.MissionType == MissionEliminateTargets || _faction.MissionType == MissionDestroyTarget ||
+                 _faction.MissionType == MissionRescuePrisoner || _faction.MissionType == MissionHuntAnimal))
                 _objectiveController.Maintain(player);
 
             _story.Tick();
@@ -612,6 +618,17 @@ namespace EnRAGEPlayerFactionExtension
                     entityHandle = _supplyCache.Handle;
                     promptLabel = "Recoger provisiones";
                 }
+                else if (_faction.MissionType == MissionRescuePrisoner &&
+                    _faction.MissionObjectiveIndex >= 1)
+                {
+                    Ped prisoner = _objectiveController.CourierPed;
+                    if (prisoner != null && prisoner.Exists() && !prisoner.IsDead &&
+                        player.Position.DistanceTo(prisoner.Position) <= 5f)
+                    {
+                        entityHandle = prisoner.Handle;
+                        promptLabel = "Liberar al explorador";
+                    }
+                }
                 else if (_faction.MissionType == MissionCourier &&
                     _faction.MissionObjectiveIndex >= 1)
                 {
@@ -775,16 +792,31 @@ namespace EnRAGEPlayerFactionExtension
                     status = "Vuelve al campamento para entregar el encargo.";
                 else if (_faction.MissionStage == 3)
                     status = "La recompensa está pendiente; se entregará cuando los recursos de la facción estén disponibles.";
-                else if (_faction.MissionObjectiveReady && (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionCourier))
-                    status = _faction.MissionType == MissionSupplyCache
-                        ? "El alijo está listo. Acércate al cajón para recoger las provisiones mediante su prompt contextual."
-                        : "Has llegado al contacto. Usa su prompt contextual para hablar y entregar el despacho.";
+                else if (_faction.MissionObjectiveReady &&
+                    (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionCourier ||
+                     _faction.MissionType == MissionRescuePrisoner))
+                {
+                    if (_faction.MissionType == MissionSupplyCache)
+                        status = "El alijo está listo. Acércate al cajón para recoger las provisiones mediante su prompt contextual.";
+                    else if (_faction.MissionType == MissionRescuePrisoner)
+                        status = "Los captores han caído. Acércate al explorador y usa el prompt contextual para liberarlo.";
+                    else
+                        status = "Has llegado al contacto. Usa su prompt contextual para hablar y entregar el despacho.";
+                }
                 else if (_faction.MissionType == MissionConvoy)
                     status = _faction.MissionObjectiveReady
                         ? "El convoy está despejado. Acércate a la carreta para saquear el cargamento mediante su prompt contextual."
                         : "Intercepta el convoy y elimina a todos los escoltas antes de saquear el cargamento.";
                 else if (_faction.MissionType == MissionStakeout)
-                    status = "Vigila el cruce durante 18 segundos dentro del perímetro marcado. El reloj se pausa si te alejas; puede aparecer una partida.";
+                    status = "Vigila el cruce durante 24 segundos dentro del perímetro marcado. El reloj se pausa si te alejas; puede aparecer una partida.";
+                else if (_faction.MissionType == MissionEliminateTargets)
+                    status = "Llega al escondite y elimina a todos los enemigos.";
+                else if (_faction.MissionType == MissionDestroyTarget)
+                    status = "Neutraliza a los escoltas y destruye el carro de suministros.";
+                else if (_faction.MissionType == MissionRescuePrisoner)
+                    status = "Elimina a los captores y libera al explorador que mantienen retenido.";
+                else if (_faction.MissionType == MissionHuntAnimal)
+                    status = "Sigue las señales hasta la zona de caza y abate a los lobos.";
                 else if (_faction.MissionType == MissionPatrol)
                     status = "Patrulla activa: visita el punto " + (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + " y continúa con los siguientes.";
                 else
@@ -805,6 +837,7 @@ namespace EnRAGEPlayerFactionExtension
 
             // Weighted selection varies the contract and avoids repeating the previous completion.
             RemoveLootPrompt();
+            RemoveObjectivePrompt();
             _objectiveController.CleanupConvoy();
             if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
             Random missionRandom = new Random(unchecked(Game.GameTime * 397 ^ _faction.MissionsCompleted * 7919 ^ _faction.MissionPrestige));
@@ -838,9 +871,11 @@ namespace EnRAGEPlayerFactionExtension
             if (_faction.MissionType == MissionPatrol || _faction.MissionType == MissionReconnaissance)
                 angle += pointIndex * (Math.PI * 2.0 / PatrolWaypointCount);
 
-            float radius = _faction.MissionType == MissionStakeout
-                ? 235f
-                : (_faction.MissionType == MissionPatrol ? 285f : (_faction.MissionType == MissionConvoy ? 315f : 260f));
+            float radius = _faction.MissionType == MissionStakeout ? 235f :
+                (_faction.MissionType == MissionPatrol ? 285f :
+                (_faction.MissionType == MissionConvoy || _faction.MissionType == MissionDestroyTarget ? 315f :
+                (_faction.MissionType == MissionHuntAnimal ? 300f :
+                (_faction.MissionType == MissionRescuePrisoner ? 225f : 260f))));
             radius += ((_faction.MissionsCompleted + pointIndex) % 3) * 18f;
             radius += Math.Max(0, Math.Min(2, _faction.MissionDifficulty)) * 22f;
 
@@ -903,6 +938,10 @@ namespace EnRAGEPlayerFactionExtension
                 case MissionStakeout: return "Cruce de vigilancia";
                 case MissionCourier: return "Punto de entrega";
                 case MissionConvoy: return "Convoy enemigo";
+                case MissionEliminateTargets: return "Escondite enemigo";
+                case MissionDestroyTarget: return "Carro de suministros";
+                case MissionRescuePrisoner: return "Explorador retenido";
+                case MissionHuntAnimal: return "Zona de caza";
                 default: return "Reconocimiento de ruta";
             }
         }
@@ -1122,6 +1161,104 @@ namespace EnRAGEPlayerFactionExtension
                         }
                     }
                 }
+                else if (_faction.MissionType == MissionEliminateTargets)
+                {
+                    if (distance <= 65f && _objectiveController.EncounterSpawned &&
+                        _faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnEncounterStarted(_faction.MissionType);
+                    }
+                    if (distance <= 65f && _objectiveController.AllGuardsDefeated())
+                        AdvanceMissionToReturn("Has despejado el escondite y eliminado a los hombres que lo ocupaban.");
+                    else if (distance <= 65f && _objectiveController.EncounterSpawnFailed &&
+                        !_objectiveController.EncounterSpawned)
+                        FailActiveMission("No se pudo establecer contacto con los ocupantes del escondite. El encargo queda cancelado.");
+                }
+                else if (_faction.MissionType == MissionDestroyTarget)
+                {
+                    if (distance <= 70f && _objectiveController.EncounterSpawned &&
+                        _faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnEncounterStarted(_faction.MissionType);
+                    }
+
+                    bool guardsClear = _objectiveController.AllGuardsDefeated() ||
+                        _objectiveController.EncounterSpawnFailed;
+                    if (distance <= 70f && guardsClear &&
+                        _objectiveController.EncounterSpawnFailed && !_objectiveController.EncounterSpawned &&
+                        _objectiveController.TargetVehicleSpawnFailed)
+                    {
+                        FailActiveMission("No apareció el carro ni se pudo localizar a sus escoltas. El encargo queda cancelado.");
+                    }
+                    else if (distance <= 70f && guardsClear)
+                    {
+                        if (_faction.MissionConvoyWagonHandle != 0 && _objectiveController.IsWagonDestroyedOrMissing())
+                            AdvanceMissionToReturn("Los escoltas han caído y el carro de suministros ha quedado destruido o ha desaparecido.");
+                        else if (_objectiveController.TargetVehicleSpawnFailed)
+                            AdvanceMissionToReturn("El carro no pudo llegar a la zona. Has neutralizado a sus escoltas y evitado que entreguen los suministros.");
+                        else if (_objectiveController.TargetVehicleAvailable && !_faction.MissionObjectiveReady)
+                        {
+                            _faction.MissionObjectiveReady = true;
+                            SaveFaction();
+                            _story.ShowMissionStatus("El carro está expuesto. Destrúyelo para completar el sabotaje.", 3000);
+                        }
+                    }
+                }
+                else if (_faction.MissionType == MissionRescuePrisoner)
+                {
+                    if (distance <= 65f && _objectiveController.EncounterSpawned &&
+                        _faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnEncounterStarted(_faction.MissionType);
+                    }
+
+                    if (_objectiveController.CourierSpawnFailed && !_objectiveController.CourierAvailable)
+                    {
+                        FailActiveMission("El explorador no pudo aparecer en el punto de rescate. El encargo queda cancelado.");
+                    }
+                    else if (distance <= 65f &&
+                        (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed))
+                    {
+                        Ped prisoner = _objectiveController.CourierPed;
+                        if (prisoner != null && prisoner.Exists() && prisoner.IsDead)
+                        {
+                            FailActiveMission("Los captores han caído, pero el explorador no sobrevivió. El encargo queda cancelado.");
+                        }
+                        else if (prisoner != null && prisoner.Exists() && !_faction.MissionObjectiveReady)
+                        {
+                            _faction.MissionObjectiveReady = true;
+                            _faction.MissionObjectiveIndex = 1;
+                            SaveFaction();
+                            _story.OnCheckpoint(_faction.MissionType, 1);
+                        }
+                        else if (_objectivePromptJustCompleted && prisoner != null && prisoner.Exists())
+                        {
+                            _story.OnObjectiveInteraction(player, "RESCATE: Cortas las ataduras del explorador y le indicas la ruta de vuelta.");
+                            AdvanceMissionToReturn("Has liberado al explorador y asegurado su regreso.");
+                        }
+                    }
+                }
+                else if (_faction.MissionType == MissionHuntAnimal)
+                {
+                    if (distance <= 65f && _objectiveController.EncounterSpawned &&
+                        _faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnEncounterStarted(_faction.MissionType);
+                    }
+                    if (distance <= 70f && _objectiveController.AllGuardsDefeated())
+                        AdvanceMissionToReturn("Has abatido a los lobos y despejado la zona de caza.");
+                    else if (distance <= 70f && _objectiveController.EncounterSpawnFailed &&
+                        !_objectiveController.EncounterSpawned)
+                        FailActiveMission("No se pudo localizar a la manada en la zona marcada. El encargo queda cancelado.");
+                }
                 else if (_faction.MissionType == MissionStakeout)
                 {
                     int now = Game.GameTime;
@@ -1183,7 +1320,7 @@ namespace EnRAGEPlayerFactionExtension
                         SaveFaction();
                     }
 
-                    if (_faction.MissionWaitProgressMs >= 6000 && _faction.MissionObjectiveIndex == 0 &&
+                    if (_faction.MissionWaitProgressMs >= 8000 && _faction.MissionObjectiveIndex == 0 &&
                         (_objectiveController.EncounterSpawned || _objectiveController.EncounterSpawnFailed))
                     {
                         _faction.MissionObjectiveIndex = 1;
@@ -1200,7 +1337,8 @@ namespace EnRAGEPlayerFactionExtension
                     if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
                         (!_objectiveController.EncounterSpawned || _objectiveController.AllGuardsDefeated()))
                         AdvanceMissionToReturn(
-                            "Has vigilado el cruce durante 18 segundos y confirmado quién utiliza la ruta.");
+                            "Has vigilado el cruce durante " + (StakeoutDurationMs / 1000) +
+                            " segundos y confirmado quién utiliza la ruta.");
                 }
                 
                 else if (_faction.MissionType == MissionReconnaissance && distance <= 24f)
@@ -1234,6 +1372,28 @@ namespace EnRAGEPlayerFactionExtension
 
             if (_faction.MissionStage == 3 && Game.GameTime >= _nextRewardRetryAt)
                 CompleteMission();
+        }
+
+        private void FailActiveMission(string reason)
+        {
+            RemoveObjectivePrompt();
+            RemoveLootPrompt();
+            _objectiveController.CleanupConvoy();
+            DeleteSupplyCacheProp();
+            _faction.MissionStage = 0;
+            _faction.MissionType = MissionReconnaissance;
+            _faction.MissionObjectiveIndex = 0;
+            _faction.MissionObjectiveReady = false;
+            _faction.MissionWaitProgressMs = 0;
+            _faction.MissionTargetX = 0f;
+            _faction.MissionTargetY = 0f;
+            _faction.MissionTargetZ = 0f;
+            _missionTimerInitialized = false;
+            _lastMissionProgressTickAt = 0;
+            SaveFaction();
+            RemoveTargetBlip();
+            _story.ShowMissionStatus("ENCARGO FALLIDO: " + reason, 4500);
+            Log.Write("Mission failed without rewards: " + reason);
         }
 
         private void AdvanceMissionToReturn(string message)

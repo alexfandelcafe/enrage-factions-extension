@@ -8,9 +8,9 @@
     <Nullable>disable</Nullable>
     <AssemblyName>EnRAGEPlayerFactionExtension</AssemblyName>
     <RootNamespace>EnRAGEPlayerFactionExtension</RootNamespace>
-    <Version>0.5.0</Version>
-    <AssemblyVersion>0.5.0.0</AssemblyVersion>
-    <FileVersion>0.5.0.0</FileVersion>
+    <Version>0.5.1</Version>
+    <AssemblyVersion>0.5.1.0</AssemblyVersion>
+    <FileVersion>0.5.1.0</FileVersion>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <RDR2GameDir Condition="'$(RDR2GameDir)' == ''">D:\Red Dead Redemption 2</RDR2GameDir>
   </PropertyGroup>

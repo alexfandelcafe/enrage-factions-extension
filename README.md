@@ -1,19 +1,23 @@
-# EnRAGE Player Faction Extension — v0.5.0
+# EnRAGE Player Faction Extension — v0.5.1
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
-> Esta guía describe el comportamiento actual del código de `main`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
+> Esta guía describe el comportamiento de la rama `feature/camp-mission-giver`. Los cambios de misión deben probarse dentro de RDR2 antes de considerarlos validados en juego.
 
-## Misiones narrativas y encuentros (v0.5.0)
+## Misiones narrativas y encuentros (v0.5.1)
 
 Los contratos comparten ahora un controlador de narrativa, interacción y encuentros:
 
-- **Reconocimiento:** requiere inspeccionar dos puntos diferentes para reconstruir el rastro antes de regresar.
-- **Patrulla:** mantiene tres puntos secuenciales con avisos de progreso.
-- **Provisiones:** el alijo puede estar vigilado; hay que despejar la zona antes de recogerlo. Si el encuentro no puede generarse tras varios intentos, el contrato conserva una salida alternativa.
-- **Vigilancia (rework):** el contador avanza dentro de un perímetro de 35 m, se pausa al salir y tolera pausas breves del script. Muestra el tiempo restante y, si aparece una emboscada, exige despejar la zona antes de volver. Si el encuentro no se puede crear, el contrato sigue siendo completable.
-- **Despacho:** genera un contacto físico en el punto de encuentro cuando el modelo está disponible y convierte la entrega en una conversación de varias interacciones; hay una alternativa si el NPC no aparece.
-- **Convoy:** mantiene escoltas, saqueo contextual y finalización alternativa si la carreta es destruida o no está disponible.
+- **Reconocimiento:** inspecciona dos puntos distintos para reconstruir el rastro antes de volver.
+- **Patrulla:** recorre tres controles secuenciales; el rumbo y la distancia varían entre salidas.
+- **Provisiones:** el alijo físico puede estar vigilado; despeja la zona y recoge el cajón con su prompt contextual.
+- **Vigilancia:** exige permanecer 24 segundos dentro de un perímetro de 35 m. El reloj se pausa al salir y puede activar una emboscada.
+- **Despacho:** genera un contacto físico y requiere verificarlo y entregar el documento mediante dos interacciones contextuales.
+- **Convoy:** presenta escoltas y una carreta saqueable con prompt contextual; permite completar el encargo si el vehículo se destruye o desaparece.
+- **Limpiar el escondite:** combate contra un grupo de 3–5 enemigos. Se desbloquea tras completar un encargo.
+- **Sabotear el carro:** elimina a los escoltas y destruye un carro de suministros. Se desbloquea tras tres encargos.
+- **Rescatar al explorador:** neutraliza a los captores y libera a un NPC vivo mediante un prompt contextual. Si no aparece o muere, el encargo falla sin recompensa.
+- **Cazar al depredador:** enfrenta al jugador a una manada de 2–3 lobos. Se desbloquea tras tres encargos.
 - **Narrativa y sonido:** hay líneas de diálogo contextual en subtítulos o notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con limpieza al resolver el encuentro.
 - **Interacciones v0.4.2:** la carreta del convoy usa un prompt ambiental nativo “Saquear cargamento” asociado a la entidad, en lugar de detectar G sin indicar la acción. Los resúmenes iniciales y de transición ya no se envían como avisos enRAGE cuando también hay diálogo por subtítulos. Los eventos de música se preparan antes de activarse y se reintentan si el motor no los acepta en el primer intento.
 
@@ -184,20 +188,24 @@ Las teclas efectivas dependen de la configuración de controles del juego y de C
 
 ### Encargado de misiones independientes
 
-Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. El prompt **Pedir una misión** asigna uno de seis contratos. La selección es ponderada, evita repetir el último contrato completado y aumenta la dificultad cada cierto número de misiones.
+Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. El prompt **Pedir una misión** asigna uno de diez contratos. La selección es ponderada, evita repetir el último contrato completado, desbloquea los nuevos tipos gradualmente y aumenta la dificultad cada cierto número de misiones.
 
 | Encargo | Objetivo | Recompensa base |
 |---|---|---|
-| **Reconocimiento de ruta** | Visitar el punto marcado y regresar al campamento. | +5 prestigio, +5 suministros y $25. |
-| **Patrulla de frontera** | Recorrer tres puntos de control en orden y regresar. | +8 prestigio, +8 suministros y $35. |
-| **Recuperar provisiones** | Encontrar el alijo físico, recogerlo y regresar. | +9 prestigio, +12 suministros y $20. |
-| **Vigilar el cruce** | Permanecer dentro de la zona durante 18 segundos y regresar. | +7 prestigio, +6 suministros y $30. |
-| **Entregar el despacho** | Llegar al contacto fuera de escena, confirmar la entrega y regresar. | +8 prestigio, +5 suministros y $45. |
-| **Interceptar un convoy** | Enfrentarse a 2–4 escoltas armados, saquear la carreta y regresar. | +10 prestigio, +12 suministros y $60. |
+| **Reconocimiento de ruta** | Inspeccionar dos puntos y regresar. | +5 prestigio, +5 suministros y $25. |
+| **Patrulla de frontera** | Recorrer tres puntos en orden y regresar. | +8 prestigio, +8 suministros y $35. |
+| **Recuperar provisiones** | Despejar el alijo, recoger el cajón y regresar. | +9 prestigio, +12 suministros y $20. |
+| **Vigilar el cruce** | Permanecer en la zona 24 segundos y despejar la emboscada si aparece. | +8 prestigio, +7 suministros y $34. |
+| **Entregar el despacho** | Verificar al contacto, entregar el documento y regresar. | +8 prestigio, +6 suministros y $48. |
+| **Interceptar un convoy** | Eliminar a 2–4 escoltas y saquear la carreta. | +11 prestigio, +13 suministros y $65. |
+| **Limpiar el escondite** | Eliminar a 3–5 enemigos en un refugio. | +10 prestigio, +9 suministros y $42. |
+| **Sabotear el carro** | Eliminar a los escoltas y destruir el vehículo. | +11 prestigio, +7 suministros y $68. |
+| **Rescatar al explorador** | Eliminar a los captores y liberar al prisionero. | +13 prestigio, +10 suministros y $38. |
+| **Cazar al depredador** | Abatir una manada de 2–3 lobos. | +10 prestigio, +7 suministros y $52. |
 
-La dificultad tiene tres niveles (**baja, media y alta**) y multiplica las recompensas base en un 30 % por nivel. En el asalto al convoy se genera una carreta con escoltas hostiles cerca del objetivo; el número de enemigos, su precisión y la munición aumentan con la dificultad. La escena solo se crea cerca del jugador, y los handles guardados se validan por modelo y posición antes de reutilizarse o limpiarse.
+La dificultad tiene tres niveles (**baja, media y alta**) y multiplica las recompensas base en un 30 % por nivel. La cantidad de enemigos crece con la dificultad; también aumentan su precisión y munición. Los contratos de convoy y sabotaje incluyen un vehículo físico. En el asalto al convoy se genera una carreta con escoltas hostiles cerca del objetivo; el número de enemigos, su precisión y la munición aumentan con la dificultad. La escena solo se crea cerca del jugador, y los handles guardados se validan por modelo y posición antes de reutilizarse o limpiarse.
 
-El alijo de provisiones sigue apareciendo como un cajón físico; el despacho representa un contacto fuera de escena y se confirma con la tecla contextual. En el convoy, el saqueo se registra al interactuar junto a la carreta una vez derrotados los escoltas.\n\nEl catálogo de contratos, el controlador de entidades del objetivo y el encargado del campamento están separados en clases propias. Los objetivos usan el sprite **blip_objective**, en lugar de un icono de punto de interés. El progreso y la dificultad activa se guardan en PlayerFaction.json; el sistema sigue usando marcadores propios y no consume eventos de WorldEvent ni EncounterKind de enRAGE.
+El alijo y la carreta del convoy utilizan prompts contextuales nativos asociados a sus entidades. El despacho requiere dos interacciones con el contacto. El rescate tiene un prompt específico para liberar al explorador; el sabotaje exige destruir el carro después de eliminar a los escoltas.\n\nEl catálogo de contratos, el controlador de entidades del objetivo y el encargado del campamento están separados en clases propias. Los objetivos usan el sprite **blip_objective**, en lugar de un icono de punto de interés. El progreso y la dificultad activa se guardan en PlayerFaction.json; el sistema sigue usando marcadores propios y no consume eventos de WorldEvent ni EncounterKind de enRAGE.
 
 ### Aislamiento de la facción del jugador
 

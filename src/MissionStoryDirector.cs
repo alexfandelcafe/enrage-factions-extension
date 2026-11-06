@@ -77,7 +77,8 @@ namespace EnRAGEPlayerFactionExtension
         internal void OnEncounterStarted(int missionType)
         {
             PlayFrontendCue("NAV_UP_DOWN");
-            if (missionType == 2 || missionType == 3 || missionType == 5)
+            if (missionType == 2 || missionType == 3 || missionType == 5 ||
+                missionType == 6 || missionType == 7 || missionType == 8 || missionType == 9)
                 StartCombatMusic();
             QueueDialogue(GetEncounterLines(missionType));
         }
@@ -197,6 +198,30 @@ namespace EnRAGEPlayerFactionExtension
                         "ENCARGADO: Si la carreta termina destruida, recoge lo que puedas de la zona y no te quedes allí.",
                         "ENCARGADO: " + qualifier
                     };
+                case 6:
+                    return new[] {
+                        "ENCARGADO: Un grupo se ha instalado demasiado cerca de nuestros caminos. Entra en su escondite y no dejes que vuelva a organizarse.",
+                        "ENCARGADO: Cuenta a los hombres antes de retirarte; no des por despejado el lugar mientras quede uno en pie.",
+                        "ENCARGADO: " + qualifier
+                    };
+                case 7:
+                    return new[] {
+                        "ENCARGADO: Un carro de suministros abastece a una partida rival. Localízalo, neutraliza a su escolta y deja el vehículo fuera de servicio.",
+                        "ENCARGADO: No basta con espantar a los guardias. El carro no debe llegar a su destino.",
+                        "ENCARGADO: " + qualifier
+                    };
+                case 8:
+                    return new[] {
+                        "ENCARGADO: Un explorador de los nuestros ha sido retenido. Encuentra el lugar, elimina a sus captores y sácalo de allí.",
+                        "ENCARGADO: Comprueba que siga con vida antes de dar el rescate por terminado.",
+                        "ENCARGADO: " + qualifier
+                    };
+                case 9:
+                    return new[] {
+                        "ENCARGADO: Hay lobos atacando a viajeros en esa zona. Sigue sus rastros y reduce la manada antes de que vuelva a acercarse a nuestros caminos.",
+                        "ENCARGADO: No confundas las huellas de paso con las de una guarida. Revisa el área marcada.",
+                        "ENCARGADO: " + qualifier
+                    };
                 default:
                     return new[] {
                         "ENCARGADO: Quiero información fiable sobre ese camino. Examina el terreno antes de volver.",
@@ -222,6 +247,14 @@ namespace EnRAGEPlayerFactionExtension
                     return new[] { "VIGILANCIA: Mantén la posición. El movimiento en el camino podría no ser casual." };
                 case 4:
                     return new[] { "DESPACHO: El punto de encuentro está cerca. Confirma la identidad del contacto antes de entregar nada." };
+                case 6:
+                    return new[] { "ESCONDITE: Has localizado el refugio. Los hombres están cerca; entra con cuidado y no dejes ninguno detrás." };
+                case 7:
+                    return new[] { "SABOTAJE: El carro está en la zona. Primero despeja a los escoltas; después acaba con el vehículo." };
+                case 8:
+                    return new[] { "RESCATE: Has encontrado el lugar de retención. Neutraliza a los captores y busca al explorador." };
+                case 9:
+                    return new[] { "CAZA: Hay señales recientes de lobos. Mantén la atención; pueden atacar desde varios lados." };
                 default:
                     return new[] { "CONVOY: Has llegado a la zona. Observa a los escoltas y busca el momento para acercarte." };
             }
@@ -233,6 +266,10 @@ namespace EnRAGEPlayerFactionExtension
             {
                 case 2: return new[] { "ALIJO: Te han descubierto. Despeja la zona antes de recoger las provisiones." };
                 case 3: return new[] { "VIGILANCIA: ¡Una partida se aproxima al cruce! Aguanta la posición y neutraliza a los atacantes." };
+                case 6: return new[] { "ESCONDITE: Ya te han visto. Cierra las salidas y elimina a los hombres que ocupan el refugio." };
+                case 7: return new[] { "SABOTAJE: Los escoltas protegen el carro. Rompe su defensa y destruye el vehículo." };
+                case 8: return new[] { "RESCATE: Los captores han reaccionado. Acaba con ellos sin poner en peligro al explorador." };
+                case 9: return new[] { "CAZA: La manada está cerca. Abate a los lobos antes de que puedan rodearte." };
                 default: return new[] { "CONVOY: Los escoltas están alerta. Busca cobertura y neutraliza la amenaza antes de registrar la carga." };
             }
         }
@@ -246,6 +283,10 @@ namespace EnRAGEPlayerFactionExtension
                 case 2: return new[] { "ENCARGADO: Las provisiones valen poco si llevas enemigos hasta el campamento. Bien hecho al despejar la zona." };
                 case 3: return new[] { "ENCARGADO: Ya sabemos quién ronda el cruce. Regresa y contaremos lo que has visto." };
                 case 4: return new[] { "ENCARGADO: Un despacho entregado sin levantar sospechas. Regresa con las manos libres." };
+                case 6: return new[] { "ENCARGADO: El escondite ha quedado vacío. Tendrán que buscar otro lugar para reunirse." };
+                case 7: return new[] { "ENCARGADO: Ese carro ya no llevará suministros a nuestros rivales." };
+                case 8: return new[] { "ENCARGADO: El explorador está a salvo. Recuperar a uno de los nuestros siempre merece el riesgo." };
+                case 9: return new[] { "ENCARGADO: Los caminos vuelven a ser transitables. La manada no molestará a nuestros viajeros por un tiempo." };
                 default: return new[] { "ENCARGADO: El convoy ha quedado neutralizado. Trae el informe y deja que la banda se ocupe del resto." };
             }
         }
