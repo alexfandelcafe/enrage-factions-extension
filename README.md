@@ -10,9 +10,9 @@ Las seis misiones iniciales ahora comparten el catálogo editable, el sistema de
 
 - **Reconocimiento:** recorre varios puntos y vuelve con información.
 - **Patrulla:** visita una ruta de puntos secuenciales.
-- **Provisiones:** encuentra el alijo, despeja la zona si aparecen guardias y recoge el contenido con un prompt nativo.
+- **Provisiones:** encuentra el alijo, despeja la zona si aparecen guardias y recoge el contenido con un prompt nativo. Si el objeto no se puede crear tras varios intentos, el encargo se cierra en vez de quedarse bloqueado.
 - **Vigilancia:** el contador usa el tiempo transcurrido real mientras permaneces en el perímetro, se pausa al salir y permite configurar duración y emboscada.
-- **Despacho:** habla con un contacto y completa la entrega utilizando prompts nativos separados para hablar y entregar.
+- **Despacho:** habla con un contacto y completa la entrega utilizando prompts nativos separados para hablar y entregar. Si el contacto no se puede crear, aparece un punto de entrega alternativo con prompt contextual; si tampoco se puede materializar, se evita bloquear la misión.
 - **Convoy:** elimina a los escoltas y saquea la carreta con su prompt contextual; existe una vía de finalización alternativa cuando la carga no está disponible.
 
 Las interacciones en el encargado de misiones, el alijo, el contacto y la carreta ya no dependen de mostrar un texto que ordene pulsar G. El texto de la acción aparece en el prompt contextual de la entidad correspondiente. Los diálogos, textos por fase, recompensas, frecuencia de selección, radio, distancia objetivo y parámetros de la vigilancia se definen en JSON.
@@ -219,7 +219,7 @@ Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerc
 
 La dificultad tiene tres niveles (**baja, media y alta**) y multiplica las recompensas base en un 30 % por nivel. En el asalto al convoy se genera una carreta con escoltas hostiles cerca del objetivo; el número de enemigos, su precisión y la munición aumentan con la dificultad. La escena solo se crea cerca del jugador, y los handles guardados se validan por modelo y posición antes de reutilizarse o limpiarse.
 
-El alijo y la carreta usan prompts contextuales asociados a sus entidades, y el contacto tiene prompts distintos para conversar y entregar el paquete. No se muestra un texto que sustituya a la interacción. Los marcadores usan el sprite **blip_objective**; el progreso del contrato y la dificultad activa se guardan en `PlayerFaction.json`. El sistema utiliza marcadores propios y no consume eventos de `WorldEvent` ni `EncounterKind` de enRAGE.
+El alijo y la carreta usan prompts contextuales asociados a sus entidades, y el contacto tiene prompts distintos para conversar y entregar el paquete. Si fallan repetidamente la creación de los objetos o del contacto, la extensión aplica una salida alternativa para no bloquear el contrato. No se muestra un texto que sustituya a la interacción. Los marcadores usan el sprite **blip_objective**; el progreso del contrato y la dificultad activa se guardan en `PlayerFaction.json`. El sistema utiliza marcadores propios y no consume eventos de `WorldEvent` ni `EncounterKind` de enRAGE.
 
 Los parámetros, recompensas y diálogos por fase se editan en los archivos JSON del catálogo. Los tipos de objetivo disponibles son `ReachLocation`, `PatrolRoute`, `RecoverSupplies`, `HoldArea`, `DeliverDispatch` e `InterceptConvoy`.
 
