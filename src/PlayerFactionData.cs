@@ -84,8 +84,6 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 51)] public int MissionEncounterProcessId { get; set; }
         // Process-scoped handover contact used by the courier contract; validated by model and target distance.
         [DataMember(Order = 52)] public int MissionCourierPedHandle { get; set; }
-        // Multi-step user missions; separate from MissionObjectiveIndex, which tracks waypoints within a step.
-        [DataMember(Order = 53)] public int MissionStepIndex { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -132,8 +130,6 @@ namespace EnRAGEPlayerFactionExtension
                         data.LastMissionType = -1;
                     if (data.SchemaVersion < 17)
                         data.MissionCourierPedHandle = 0;
-                    if (data.SchemaVersion < 18)
-                        data.MissionStepIndex = 0;
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -143,7 +139,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(18, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(17, data.SchemaVersion);
                     return data;
                 }
             }
@@ -200,7 +196,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 18,
+                SchemaVersion = 17,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,

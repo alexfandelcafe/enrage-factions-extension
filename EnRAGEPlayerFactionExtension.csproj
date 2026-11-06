@@ -8,21 +8,15 @@
     <Nullable>disable</Nullable>
     <AssemblyName>EnRAGEPlayerFactionExtension</AssemblyName>
     <RootNamespace>EnRAGEPlayerFactionExtension</RootNamespace>
-    <Version>0.6.0</Version>
-    <AssemblyVersion>0.6.0.0</AssemblyVersion>
-    <FileVersion>0.6.0.0</FileVersion>
+    <Version>0.5.0</Version>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
+    <FileVersion>0.5.0.0</FileVersion>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <RDR2GameDir Condition="'$(RDR2GameDir)' == ''">D:\Red Dead Redemption 2</RDR2GameDir>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Lib.Harmony" Version="2.4.3" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Missions\defaults.json">
-      <LogicalName>EnRAGEPlayerFactionExtension.Missions.defaults.json</LogicalName>
-    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

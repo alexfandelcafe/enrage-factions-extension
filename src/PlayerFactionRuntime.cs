@@ -196,7 +196,6 @@ namespace EnRAGEPlayerFactionExtension
 
         internal PlayerFactionRuntime()
         {
-            MissionCatalog.Initialize();
             _config = ExtensionConfig.Load();
             _faction = PlayerFactionData.Load();
 
