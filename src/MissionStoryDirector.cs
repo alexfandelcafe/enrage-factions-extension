@@ -20,6 +20,7 @@ namespace EnRAGEPlayerFactionExtension
         private const string CombatMusicStop = "DUEL_GENERAL_STOP";
         private const string CombatMusicEndStinger = "DUEL_GENERAL_END_OS";
 
+        private readonly PlayerFactionData _faction;
         private readonly Queue<string> _dialogue = new Queue<string>();
         private int _nextDialogueAt;
         private int _dialogueGapMs = 2600;
@@ -28,8 +29,9 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextMusicRetryAt;
         private string _activeMusicStopEvent = CombatMusicStop;
 
-        internal MissionStoryDirector()
+        internal MissionStoryDirector(PlayerFactionData faction)
         {
+            _faction = faction;
         }
 
         internal void Tick()
@@ -53,7 +55,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             PlayFrontendCue("SELECT");
             FaceEachOther(missionGiver, player);
-            MissionDefinition definition = MissionCatalog.Get(missionType);
+            MissionDefinition definition = MissionCatalog.GetStep(missionType, _faction.MissionStepIndex);
             QueueDialogue(definition.Briefing != null && definition.Briefing.Count > 0
                 ? definition.Briefing.ToArray()
                 : new[] { "ENCARGADO: " + definition.StartInstruction });
@@ -62,13 +64,27 @@ namespace EnRAGEPlayerFactionExtension
         internal void OnCheckpoint(int missionType, int objectiveIndex)
         {
             PlayFrontendCue("NAV_UP_DOWN");
-            QueueDialogue(GetCheckpointLines(MissionCatalog.Get(missionType), objectiveIndex));
+            QueueDialogue(GetCheckpointLines(MissionCatalog.GetStep(missionType, _faction.MissionStepIndex), objectiveIndex));
+        }
+
+        internal void OnStepAdvanced(int missionType, string outcomeMessage)
+        {
+            PlayFrontendCue("NAV_UP_DOWN");
+            MissionDefinition definition = MissionCatalog.GetStep(missionType, _faction.MissionStepIndex);
+            var lines = new List<string>();
+            if (!string.IsNullOrWhiteSpace(outcomeMessage))
+                lines.Add("ENCARGADO: " + outcomeMessage);
+            if (definition.Briefing != null && definition.Briefing.Count > 0)
+                lines.AddRange(definition.Briefing);
+            else if (!string.IsNullOrWhiteSpace(definition.StartInstruction))
+                lines.Add("ENCARGADO: " + definition.StartInstruction);
+            QueueDialogue(lines);
         }
 
         internal void OnLootAvailable(int missionType)
         {
             PlayFrontendCue("SELECT");
-            MissionDefinition definition = MissionCatalog.Get(missionType);
+            MissionDefinition definition = MissionCatalog.GetStep(missionType, _faction.MissionStepIndex);
             if (definition.LootLines != null && definition.LootLines.Count > 0)
             {
                 QueueDialogue(definition.LootLines, true);
@@ -84,7 +100,7 @@ namespace EnRAGEPlayerFactionExtension
         internal void OnEncounterStarted(int missionType)
         {
             PlayFrontendCue("NAV_UP_DOWN");
-            MissionDefinition definition = MissionCatalog.Get(missionType);
+            MissionDefinition definition = MissionCatalog.GetStep(missionType, _faction.MissionStepIndex);
             if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies ||
                 definition.ObjectiveType == MissionObjectiveType.HoldArea ||
                 definition.ObjectiveType == MissionObjectiveType.InterceptConvoy)
@@ -96,7 +112,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             FaceEachOther(courier, player);
             PlayFrontendCue("SELECT");
-            MissionDefinition definition = MissionCatalog.Get(missionType);
+            MissionDefinition definition = MissionCatalog.GetStep(missionType, _faction.MissionStepIndex);
             List<string> customLines = finalExchange ? definition.HandoverLines : definition.ContactLines;
             if (customLines != null && customLines.Count > 0)
             {
@@ -147,7 +163,7 @@ namespace EnRAGEPlayerFactionExtension
             PlayFrontendCue("SELECT");
             if (!string.IsNullOrWhiteSpace(outcomeMessage))
                 QueueDialogue(new[] { "ENCARGADO: " + outcomeMessage }, true);
-            QueueDialogue(GetReturnLines(MissionCatalog.Get(missionType)), true);
+            QueueDialogue(GetReturnLines(MissionCatalog.GetStep(missionType, _faction.MissionStepIndex)), true);
         }
 
         internal void OnMissionCompleted(int missionType, string completionSummary)
