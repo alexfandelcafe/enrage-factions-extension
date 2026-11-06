@@ -1,10 +1,10 @@
-# EnRAGE Player Faction Extension — v0.4.1
+# EnRAGE Player Faction Extension — v0.4.2
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
 > Esta guía describe el comportamiento actual del código de `main`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
 
-## Misiones narrativas y encuentros (v0.4.1)
+## Misiones narrativas y encuentros (v0.4.2)
 
 Los contratos comparten ahora un controlador de narrativa, interacción y encuentros:
 
@@ -15,7 +15,7 @@ Los contratos comparten ahora un controlador de narrativa, interacción y encuen
 - **Despacho:** genera un contacto físico en el punto de encuentro cuando el modelo está disponible y convierte la entrega en una conversación de varias interacciones; hay una alternativa si el NPC no aparece.
 - **Convoy:** mantiene escoltas, saqueo contextual y finalización alternativa si la carreta es destruida o no está disponible.
 - **Narrativa y sonido:** hay líneas de diálogo contextual en subtítulos o notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con limpieza al resolver el encuentro.
-- **Interacciones v0.4.1:** se desactivó temporalmente la reproducción de animaciones nativas en la ruta de saqueo para evitar inestabilidad mientras se valida en el juego. Al acercarse al cargamento, alijo o contacto se muestra una instrucción contextual visible con la tecla `[G]`; si el API de subtítulos no está disponible, se usa una notificación.
+- **Interacciones v0.4.2:** la carreta del convoy usa un prompt ambiental nativo “Saquear cargamento” asociado a la entidad, en lugar de detectar G sin indicar la acción. Los resúmenes iniciales y de transición ya no se envían como avisos enRAGE cuando también hay diálogo por subtítulos. Los eventos de música se preparan antes de activarse y se reintentan si el motor no los acepta en el primer intento.
 
 Los textos son diálogo contextual escrito por la extensión; no son doblaje original ni nuevas voces grabadas. La música y el comportamiento visual de los subtítulos deben probarse en RDR2. Este entorno permite revisar el código, pero no ejecutar una sesión de juego real.
 

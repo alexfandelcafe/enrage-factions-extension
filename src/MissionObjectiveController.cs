@@ -110,6 +110,8 @@ namespace EnRAGEPlayerFactionExtension
             return true;
         }
 
+        internal Vehicle CargoWagon { get { return ResolveWagon(MissionTarget, 250f); } }
+
         internal bool IsPlayerNearLoot(Ped player, float maxDistance = 8f)
         {
             if (player == null || !player.Exists()) return false;

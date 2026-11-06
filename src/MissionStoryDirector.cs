@@ -13,6 +13,7 @@ namespace EnRAGEPlayerFactionExtension
     internal sealed class MissionStoryDirector
     {
         private const ulong PlaySoundFrontendHash = 0x67C540AA08E4A6F5UL;
+        private const ulong PrepareMusicEventHash = 0x1E5185B72EF5158AUL;
         private const ulong TriggerMusicEventHash = 0x706D57B0F50DA710UL;
         private const ulong TurnPedToFaceEntityHash = 0x5AD23D40115353ACUL;
         private const string CombatMusicStart = "DUEL_GENERAL_START";
@@ -24,6 +25,9 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextDialogueAt;
         private int _dialogueGapMs = 2600;
         private bool _combatMusicActive;
+        private bool _combatMusicRequested;
+        private int _nextMusicRetryAt;
+        private string _activeMusicStopEvent = CombatMusicStop;
         private int _nextInteractionHintAt;
         private int _nextHintFallbackAt;
 
@@ -34,17 +38,17 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void Tick()
         {
+            MaintainCombatMusic();
             if (_dialogue.Count == 0 || Game.GameTime < _nextDialogueAt) return;
             string line = _dialogue.Dequeue();
             try
             {
                 if (!TryDisplaySubtitle(line))
-                    _notify(line);
+                    Log.Write("Mission subtitle API unavailable; suppressed enRAGE notification fallback for: " + line);
             }
             catch (Exception ex)
             {
-                Log.Write("Mission dialogue display warning: " + ex.Message);
-                try { _notify(line); } catch { }
+                Log.Write("Mission subtitle display warning; suppressed duplicate notification: " + ex.Message);
             }
             _nextDialogueAt = Game.GameTime + _dialogueGapMs;
         }
@@ -60,6 +64,15 @@ namespace EnRAGEPlayerFactionExtension
         {
             PlayFrontendCue("NAV_UP_DOWN");
             QueueDialogue(GetCheckpointLines(missionType, objectiveIndex));
+        }
+
+        internal void OnLootAvailable(int missionType)
+        {
+            PlayFrontendCue("SELECT");
+            if (missionType == 5)
+                QueueDialogue(new[] { "ENCARGADO: La carreta está despejada. Registra el cargamento y trae lo que se pueda salvar." }, true);
+            else
+                QueueDialogue(new[] { "ENCARGADO: La zona está despejada. Recupera las provisiones y vuelve sin dejar rastro." }, true);
         }
 
         internal void OnEncounterStarted(int missionType)
@@ -118,17 +131,21 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Mission interaction hint fallback warning: " + ex.Message); }
         }
 
-        internal void OnMissionReturning(int missionType)
+        internal void OnMissionReturning(int missionType, string outcomeMessage)
         {
             StopCombatMusic(true);
             PlayFrontendCue("SELECT");
+            if (!string.IsNullOrWhiteSpace(outcomeMessage))
+                QueueDialogue(new[] { "ENCARGADO: " + outcomeMessage }, true);
             QueueDialogue(GetReturnLines(missionType), true);
         }
 
-        internal void OnMissionCompleted(int missionType)
+        internal void OnMissionCompleted(int missionType, string completionSummary)
         {
             StopCombatMusic(true);
             PlayFrontendCue("SELECT");
+            if (!string.IsNullOrWhiteSpace(completionSummary))
+                QueueDialogue(new[] { "ENCARGADO: " + completionSummary }, true);
             QueueDialogue(new[] { "ENCARGADO: Buen trabajo. La banda recordará que has cumplido." }, true);
         }
 
@@ -136,6 +153,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             _dialogue.Clear();
             StopCombatMusic(false);
+            _combatMusicRequested = false;
         }
 
         private void QueueDialogue(IEnumerable<string> lines, bool append = false)
@@ -242,28 +260,72 @@ namespace EnRAGEPlayerFactionExtension
         private void StartCombatMusic()
         {
             if (_combatMusicActive) return;
+            _combatMusicRequested = true;
+            _nextMusicRetryAt = 0;
+            MaintainCombatMusic();
+        }
+
+        private void MaintainCombatMusic()
+        {
+            if (!_combatMusicRequested || _combatMusicActive || Game.GameTime < _nextMusicRetryAt)
+                return;
+
+            _nextMusicRetryAt = Game.GameTime + 2500;
             try
             {
-                // A built-in RDR2 music event is used only for hostile encounters.
-                _combatMusicActive = Function.Call<bool>(TriggerMusicEventHash,
+                bool prepared = Function.Call<bool>(PrepareMusicEventHash,
                     new InputArgument[] { CombatMusicStart });
-                if (!_combatMusicActive)
-                    Log.Write("Mission combat music event was not accepted by the game audio engine.");
+                bool triggered = Function.Call<bool>(TriggerMusicEventHash,
+                    new InputArgument[] { CombatMusicStart });
+
+                Log.Write("Mission music start event " + CombatMusicStart +
+                    ": prepared=" + prepared + ", triggered=" + triggered + ".");
+
+                if (triggered)
+                {
+                    _combatMusicActive = true;
+                    _combatMusicRequested = false;
+                    _activeMusicStopEvent = CombatMusicStop;
+                    return;
+                }
+
+                bool fallbackPrepared = Function.Call<bool>(PrepareMusicEventHash,
+                    new InputArgument[] { "BRT1_FIGHT_START" });
+                bool fallbackTriggered = Function.Call<bool>(TriggerMusicEventHash,
+                    new InputArgument[] { "BRT1_FIGHT_START" });
+                Log.Write("Mission music fallback BRT1_FIGHT_START: prepared=" +
+                    fallbackPrepared + ", triggered=" + fallbackTriggered + ".");
+
+                if (fallbackTriggered)
+                {
+                    _combatMusicActive = true;
+                    _combatMusicRequested = false;
+                    _activeMusicStopEvent = "BRT1_STOP";
+                }
             }
-            catch (Exception ex) { Log.Write("Mission combat music warning: " + ex.Message); }
+            catch (Exception ex)
+            {
+                Log.Write("Mission combat music start warning: " + ex.Message);
+            }
         }
 
         private void StopCombatMusic(bool playStinger)
         {
+            _combatMusicRequested = false;
             if (!_combatMusicActive) return;
             try
             {
-                if (playStinger)
+                if (playStinger && _activeMusicStopEvent == CombatMusicStop)
+                {
+                    Function.Call(PrepareMusicEventHash, new InputArgument[] { CombatMusicEndStinger });
                     Function.Call(TriggerMusicEventHash, new InputArgument[] { CombatMusicEndStinger });
-                Function.Call(TriggerMusicEventHash, new InputArgument[] { CombatMusicStop });
+                }
+                Function.Call(PrepareMusicEventHash, new InputArgument[] { _activeMusicStopEvent });
+                Function.Call(TriggerMusicEventHash, new InputArgument[] { _activeMusicStopEvent });
             }
             catch (Exception ex) { Log.Write("Mission combat music stop warning: " + ex.Message); }
             _combatMusicActive = false;
+            _activeMusicStopEvent = CombatMusicStop;
         }
 
         private bool TryDisplaySubtitle(string line, int duration = 4200)

@@ -46,6 +46,11 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextCacheSpawnRetryAt;
         private int _prompt;
         private int _promptGroup;
+        private int _lootPrompt;
+        private int _lootPromptGroup;
+        private int _lootPromptEntityHandle;
+        private bool _lootPromptArmed = true;
+        private bool _lootPromptJustCompleted;
         private int _targetBlip;
         private int _nextSpawnAt;
         private bool _spawnDelayInitialized;
@@ -69,6 +74,7 @@ namespace EnRAGEPlayerFactionExtension
             if (!_faction.Founded || string.IsNullOrWhiteSpace(_faction.CampSiteId))
             {
                 DeleteSupplyCacheProp();
+                RemoveLootPrompt();
                 _objectiveController.CleanupConvoy();
                 _story.OnScriptAborted();
                 DeletePed();
@@ -79,6 +85,7 @@ namespace EnRAGEPlayerFactionExtension
             if (player == null || !player.Exists() || player.IsDead || !_bridge.IsAvailable)
             {
                 SetPromptVisible(false);
+                SetLootPromptVisible(false);
                 return;
             }
 
@@ -100,7 +107,14 @@ namespace EnRAGEPlayerFactionExtension
                 _objectiveController.Maintain(player);
 
             _story.Tick();
+            if (_faction.MissionStage == 1 && _faction.MissionType == MissionConvoy)
+                MaintainConvoyLootPrompt(player);
+            else
+                RemoveLootPrompt();
+
             UpdateMissionProgress(player, campCentre);
+            if (_faction.MissionStage != 1 || _faction.MissionType != MissionConvoy)
+                RemoveLootPrompt();
             if (_faction.MissionStage > 0) EnsureTargetBlip();
             else RemoveTargetBlip();
 
@@ -148,6 +162,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             SetPromptVisible(false);
             RemovePrompt();
+            RemoveLootPrompt();
             RemoveTargetBlip();
             _story.OnScriptAborted();
             // Keep the NPC and its handle alive; the next ScriptHook runtime reconnects to it.
@@ -400,6 +415,181 @@ namespace EnRAGEPlayerFactionExtension
             method.Invoke(null, converted);
         }
 
+        private void MaintainConvoyLootPrompt(Ped player)
+        {
+            _lootPromptJustCompleted = false;
+            bool missionReady = _faction.MissionStage == 1 &&
+                _faction.MissionType == MissionConvoy &&
+                _faction.MissionObjectiveReady &&
+                (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed) &&
+                !_objectiveController.IsWagonDestroyedOrMissing();
+
+            if (!missionReady || player == null || !player.Exists() || player.IsDead ||
+                player.IsOnMount || player.IsInVehicle)
+            {
+                SetLootPromptVisible(false);
+                _lootPromptArmed = true;
+                return;
+            }
+
+            Vehicle wagon = _objectiveController.CargoWagon;
+            if (wagon == null || !wagon.Exists())
+            {
+                SetLootPromptVisible(false);
+                _lootPromptArmed = true;
+                return;
+            }
+
+            if (player.Position.DistanceTo(wagon.Position) > 7.5f)
+            {
+                SetLootPromptVisible(false);
+                _lootPromptArmed = true;
+                return;
+            }
+
+            int group;
+            try
+            {
+                group = Function.Call<int>(PromptGetGroupForEntityHash, new InputArgument[] { wagon.Handle });
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Cargo prompt group lookup warning: " + ex.Message);
+                SetLootPromptVisible(false);
+                return;
+            }
+
+            if (group == 0)
+            {
+                SetLootPromptVisible(false);
+                return;
+            }
+
+            if (_lootPrompt == 0 || _lootPromptGroup != group ||
+                _lootPromptEntityHandle != wagon.Handle || !PromptValid(_lootPrompt))
+            {
+                RemoveLootPrompt();
+                if (!TryCreateLootPrompt(group, wagon.Handle))
+                    return;
+            }
+
+            SetLootPromptVisible(true);
+            ActivateLootPromptGroup(wagon.Handle, group);
+
+            bool completed = PromptCompleted(_lootPrompt);
+            if (completed && _lootPromptArmed)
+            {
+                _lootPromptJustCompleted = true;
+                _lootPromptArmed = false;
+                SetLootPromptVisible(false);
+            }
+            else if (!completed)
+            {
+                _lootPromptArmed = true;
+            }
+        }
+
+        private bool TryCreateLootPrompt(int group, int entityHandle)
+        {
+            try
+            {
+                Type mainType = _bridge.MainInstance != null ? _bridge.MainInstance.GetType() : null;
+                if (mainType == null) return false;
+                MethodInfo make = mainType.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "MakePrompt" && m.GetParameters().Length == 4);
+                if (make == null)
+                {
+                    Log.Write("Cargo prompt creation failed: enRAGE MakePrompt helper not found.");
+                    return false;
+                }
+
+                Type controlType = make.GetParameters()[0].ParameterType;
+                object control = controlType.IsEnum
+                    ? Enum.ToObject(controlType, ContextControl)
+                    : (object)ContextControl;
+
+                _lootPrompt = Convert.ToInt32(make.Invoke(null,
+                    new object[] { control, "Saquear cargamento", true, group }));
+                if (_lootPrompt == 0) return false;
+                _lootPromptGroup = group;
+                _lootPromptEntityHandle = entityHandle;
+                _lootPromptArmed = true;
+                Log.Write("Cargo interaction prompt created. Prompt=" + _lootPrompt +
+                    ", group=" + group + ", wagon=" + entityHandle + ".");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Cargo prompt creation warning: " + ex.Message);
+                RemoveLootPrompt();
+                return false;
+            }
+        }
+
+        private void ActivateLootPromptGroup(int entityHandle, int group)
+        {
+            try
+            {
+                Assembly assembly = _bridge.MainInstance != null
+                    ? _bridge.MainInstance.GetType().Assembly
+                    : AppDomain.CurrentDomain.GetAssemblies()
+                        .FirstOrDefault(a => a.GetType("NemesisSystem.UiDraw", false) != null);
+                Type uiDraw = assembly != null ? assembly.GetType("NemesisSystem.UiDraw", false) : null;
+                MethodInfo forever = uiDraw != null ? uiDraw.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "ForeverVarString" && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType == typeof(string)) : null;
+                if (forever == null) return;
+
+                ulong label = Convert.ToUInt64(forever.Invoke(null, new object[] { "Cargamento del convoy" }));
+                Function.Call(SetAmbientPromptGroupThisFrameHash, new InputArgument[]
+                {
+                    entityHandle, 7.5f, 2, 0, group, new InputArgument(label), 0
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Cargo prompt activation warning: " + ex.Message);
+            }
+        }
+
+        private void SetLootPromptVisible(bool visible)
+        {
+            if (_lootPrompt == 0) return;
+            try
+            {
+                Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
+                if (hud == null) return;
+                InvokeHud(hud, "_UI_PROMPT_SET_VISIBLE", _lootPrompt, visible);
+                InvokeHud(hud, "_UI_PROMPT_SET_ENABLED", _lootPrompt, visible);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Cargo prompt visibility warning: " + ex.Message);
+            }
+        }
+
+        private void RemoveLootPrompt()
+        {
+            SetLootPromptVisible(false);
+            if (_lootPrompt != 0)
+            {
+                try
+                {
+                    Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
+                    if (hud != null) InvokeHud(hud, "_UI_PROMPT_DELETE", _lootPrompt);
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Cargo prompt delete warning: " + ex.Message);
+                }
+            }
+            _lootPrompt = 0;
+            _lootPromptGroup = 0;
+            _lootPromptEntityHandle = 0;
+            _lootPromptArmed = true;
+            _lootPromptJustCompleted = false;
+        }
+
         private void OnInteract()
         {
             if (_faction.MissionStage > 0)
@@ -438,6 +628,7 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             // Weighted selection varies the contract and avoids repeating the previous completion.
+            RemoveLootPrompt();
             _objectiveController.CleanupConvoy();
             if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
             Random missionRandom = new Random(unchecked(Game.GameTime * 397 ^ _faction.MissionsCompleted * 7919 ^ _faction.MissionPrestige));
@@ -459,11 +650,6 @@ namespace EnRAGEPlayerFactionExtension
             SaveFaction();
             EnsureTargetBlip();
 
-            int suppliesReward, treasuryReward, prestigeReward;
-            GetMissionReward(_faction.MissionType, out suppliesReward, out treasuryReward, out prestigeReward);
-            Notify("Nuevo encargo: " + GetMissionTitle(_faction.MissionType) + " (dificultad " +
-                MissionCatalog.DifficultyName(_faction.MissionDifficulty) + "). " + GetMissionStartInstruction(_faction.MissionType) +
-                " Recompensa: +" + prestigeReward + " prestigio, +" + suppliesReward + " suministros y $" + treasuryReward + " para la tesorería.");
             _story.BeginMission(_faction.MissionType, _faction.MissionDifficulty, _ped, Game.Player.Character);
         }
 
@@ -678,13 +864,7 @@ namespace EnRAGEPlayerFactionExtension
                         _faction.MissionObjectiveIndex = 1;
                         SaveFaction();
                         _story.OnEncounterStarted(_faction.MissionType);
-                        Notify("El convoy está a la vista. Busca cobertura y controla a los escoltas antes de acercarte al cargamento.");
                     }
-
-                    if (distance <= 65f && _faction.MissionObjectiveReady &&
-                        !_objectiveController.IsWagonDestroyedOrMissing() &&
-                        _objectiveController.IsPlayerNearLoot(player, 13f))
-                        _story.ShowInteractionHint("para saquear el cargamento");
 
                     // Requiring proximity prevents a distant firefight from silently advancing the contract.
                     if (distance <= 65f && (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed))
@@ -697,11 +877,9 @@ namespace EnRAGEPlayerFactionExtension
                         {
                             _faction.MissionObjectiveReady = true;
                             SaveFaction();
-                            Notify(_objectiveController.EncounterSpawnFailed
-                                ? "No ha sido posible confirmar todos los escoltas. Registra la carreta con cuidado y pulsa la tecla contextual para recuperar el cargamento."
-                                : "Los escoltas han caído. Acércate a la carreta y pulsa la tecla contextual para saquear el cargamento.");
+                            _story.OnLootAvailable(_faction.MissionType);
                         }
-                        else if (_objectiveController.IsPlayerNearLoot(player) && JustPressed(ContextControl))
+                        else if (_objectiveController.IsPlayerNearLoot(player) && _lootPromptJustCompleted)
                         {
                             _story.OnObjectiveInteraction(player, "REVISIÓN: Buscas entre los bultos y rescatas lo que todavía puede servir.");
                             AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
@@ -715,7 +893,6 @@ namespace EnRAGEPlayerFactionExtension
                         _faction.MissionObjectiveIndex = 1;
                         SaveFaction();
                         _story.OnEncounterStarted(_faction.MissionType);
-                        Notify("Hay hombres vigilando el alijo. Despeja la zona antes de tocar las cajas.");
                     }
 
                     if (distance <= 12f && _faction.MissionObjectiveIndex >= 2 && _faction.MissionObjectiveReady)
@@ -731,7 +908,6 @@ namespace EnRAGEPlayerFactionExtension
                                 _faction.MissionObjectiveIndex = 1;
                                 SaveFaction();
                                 _story.OnEncounterStarted(_faction.MissionType);
-                                Notify("El alijo está vigilado. Busca a los defensores antes de intentar recoger las provisiones.");
                             }
                         }
                         else if (_faction.MissionObjectiveIndex < 2)
@@ -739,10 +915,7 @@ namespace EnRAGEPlayerFactionExtension
                             _faction.MissionObjectiveIndex = 2;
                             _faction.MissionObjectiveReady = true;
                             SaveFaction();
-                            Notify(_objectiveController.EncounterSpawnFailed
-                                ? "No queda una amenaza activa en la zona. Pulsa la tecla contextual para recoger las provisiones."
-                                : "La zona está despejada. Acércate al alijo y pulsa la tecla contextual para recoger las provisiones.");
-                            _story.OnCheckpoint(_faction.MissionType, 2);
+                            _story.OnLootAvailable(_faction.MissionType);
                         }
                         else if (JustPressed(ContextControl))
                         {
@@ -765,9 +938,6 @@ namespace EnRAGEPlayerFactionExtension
                             _faction.MissionObjectiveReady = true;
                             _faction.MissionObjectiveIndex = 1;
                             SaveFaction();
-                            Notify(_objectiveController.CourierAvailable
-                                ? "CONTACTO: Pulsa la tecla contextual para hablar y confirmar la entrega."
-                                : "El contacto no ha aparecido. Puedes dejar el despacho en el punto acordado con la tecla contextual.");
                             _story.OnCheckpoint(_faction.MissionType, 1);
                         }
                         else if (JustPressed(ContextControl) && _faction.MissionObjectiveIndex == 1)
@@ -804,7 +974,7 @@ namespace EnRAGEPlayerFactionExtension
                     {
                         _faction.MissionObjectiveReady = true;
                         SaveFaction();
-                        Notify("Estás en posición. Mantente dentro del área durante 18 segundos para completar la vigilancia.");
+                        _story.OnCheckpoint(_faction.MissionType, 0);
                     }
 
                     if (now >= _nextMissionProgressSaveAt)
@@ -821,7 +991,6 @@ namespace EnRAGEPlayerFactionExtension
                         if (_objectiveController.EncounterSpawned)
                         {
                             _story.OnEncounterStarted(_faction.MissionType);
-                            Notify("¡Una partida se aproxima al cruce! Aguanta la posición y neutraliza a los atacantes.");
                         }
                         else
                             Notify("No se ha podido materializar la emboscada; completa el tiempo de vigilancia y vuelve al campamento.");
@@ -841,7 +1010,6 @@ namespace EnRAGEPlayerFactionExtension
                         RemoveTargetBlip();
                         EnsureTargetBlip();
                         _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex);
-                        Notify("Primer punto inspeccionado. Sigue las marcas hasta el segundo lugar para confirmar el rastro.");
                     }
                     else
                     {
@@ -869,7 +1037,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (_faction.MissionType == MissionSupplyCache)
                 DeleteSupplyCacheProp();
-            _story.OnMissionReturning(_faction.MissionType);
+            _story.OnMissionReturning(_faction.MissionType, message);
             _objectiveController.CleanupConvoy();
             _faction.MissionStage = 2;
             _faction.MissionObjectiveReady = false;
@@ -879,7 +1047,7 @@ namespace EnRAGEPlayerFactionExtension
             SaveFaction();
             RemoveTargetBlip();
             EnsureTargetBlip();
-            Notify(message + " Regresa al campamento para cobrar la recompensa.");
+            // The return explanation is queued as a subtitle dialogue by MissionStoryDirector.
         }
 
         private void CompleteMission()
@@ -913,9 +1081,9 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionTargetZ = 0f;
             SaveFaction();
             RemoveTargetBlip();
-            Notify("Misión completada: " + completedName + ". +" + prestigeReward + " prestigio, +" +
-                suppliesReward + " suministros y $" + treasuryReward + " añadidos a la tesorería de la facción.");
-            _story.OnMissionCompleted(_faction.LastMissionType);
+            string completionSummary = "El trabajo está hecho. La banda recibe " + suppliesReward +
+                " suministros, $" + treasuryReward + " para la tesorería y " + prestigeReward + " de prestigio.";
+            _story.OnMissionCompleted(_faction.LastMissionType, completionSummary);
             Log.Write("Independent mission completed: " + completedName + ". Count=" + _faction.MissionsCompleted +
                 ", mission prestige=" + _faction.MissionPrestige + ", resources=+" + suppliesReward +
                 " supplies/+$" + treasuryReward + ".");
