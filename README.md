@@ -1,8 +1,22 @@
-# EnRAGE Player Faction Extension — v0.3.7
+# EnRAGE Player Faction Extension — v0.4.0
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
 > Esta guía describe el comportamiento actual del código de `main`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
+
+## Misiones narrativas y encuentros (v0.4.0)
+
+Los contratos comparten ahora un controlador de narrativa, interacción y encuentros:
+
+- **Reconocimiento:** requiere inspeccionar dos puntos diferentes para reconstruir el rastro antes de regresar.
+- **Patrulla:** mantiene tres puntos secuenciales con avisos de progreso.
+- **Provisiones:** el alijo puede estar vigilado; hay que despejar la zona antes de recogerlo. Si el encuentro no puede generarse tras varios intentos, el contrato conserva una salida alternativa.
+- **Vigilancia:** el tiempo cuenta dentro del área y, a partir de los primeros segundos, puede aparecer una emboscada que debe neutralizarse.
+- **Despacho:** genera un contacto físico en el punto de encuentro cuando el modelo está disponible y convierte la entrega en una conversación de varias interacciones; hay una alternativa si el NPC no aparece.
+- **Convoy:** mantiene escoltas, saqueo contextual y finalización alternativa si la carreta es destruida o no está disponible.
+- **Narrativa y sonido:** hay líneas de diálogo contextual en notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con parada y limpieza al resolver el encuentro. La animación de inspección se intenta solo si el diccionario está cargado y el jugador va a pie.
+
+Los textos son diálogo contextual escrito por la extensión; no son doblaje original ni nuevas voces grabadas. El evento de música y la animación dependen de que el juego acepte los recursos nativos. Es necesario probar el resultado en RDR2: este entorno permite revisar los cambios de código, pero no ejecutar una sesión de juego real.
 
 ## Índice
 

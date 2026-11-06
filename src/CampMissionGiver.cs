@@ -40,6 +40,7 @@ namespace EnRAGEPlayerFactionExtension
         private readonly EnRAGEBridge _bridge;
         private readonly PlayerFactionData _faction;
         private readonly MissionObjectiveController _objectiveController;
+        private readonly MissionStoryDirector _story;
         private Ped _ped;
         private Prop _supplyCache;
         private int _nextCacheSpawnRetryAt;
@@ -60,6 +61,7 @@ namespace EnRAGEPlayerFactionExtension
             _bridge = bridge;
             _faction = faction;
             _objectiveController = new MissionObjectiveController(faction);
+            _story = new MissionStoryDirector(Notify);
         }
 
         internal void Maintain(Ped player, bool interactionBlocked)
@@ -68,6 +70,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 DeleteSupplyCacheProp();
                 _objectiveController.CleanupConvoy();
+                _story.OnScriptAborted();
                 DeletePed();
                 RemoveTargetBlip();
                 return;
@@ -91,9 +94,12 @@ namespace EnRAGEPlayerFactionExtension
                 DeleteSupplyCacheProp();
                 SaveFaction();
             }
-            if (_faction.MissionStage == 1 && _faction.MissionType == MissionConvoy)
+            if (_faction.MissionStage == 1 &&
+                (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionStakeout ||
+                 _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy))
                 _objectiveController.Maintain(player);
 
+            _story.Tick();
             UpdateMissionProgress(player, campCentre);
             if (_faction.MissionStage > 0) EnsureTargetBlip();
             else RemoveTargetBlip();
@@ -143,6 +149,7 @@ namespace EnRAGEPlayerFactionExtension
             SetPromptVisible(false);
             RemovePrompt();
             RemoveTargetBlip();
+            _story.OnScriptAborted();
             // Keep the NPC and its handle alive; the next ScriptHook runtime reconnects to it.
         }
 
@@ -416,6 +423,7 @@ namespace EnRAGEPlayerFactionExtension
                     status = "Patrulla activa: visita el punto " + (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + " y continúa con los siguientes.";
                 else
                     status = "Inspecciona el punto marcado en el mapa y vuelve al campamento.";
+                _story.PlayReminderCue();
                 Notify("MISIÓN ACTIVA: " + status);
                 return;
             }
@@ -456,6 +464,7 @@ namespace EnRAGEPlayerFactionExtension
             Notify("Nuevo encargo: " + GetMissionTitle(_faction.MissionType) + " (dificultad " +
                 MissionCatalog.DifficultyName(_faction.MissionDifficulty) + "). " + GetMissionStartInstruction(_faction.MissionType) +
                 " Recompensa: +" + prestigeReward + " prestigio, +" + suppliesReward + " suministros y $" + treasuryReward + " para la tesorería.");
+            _story.BeginMission(_faction.MissionType, _faction.MissionDifficulty, _ped, Game.Player.Character);
         }
 
         private unsafe void SetMissionTarget(Vector3 centre, int pointIndex)
@@ -463,7 +472,7 @@ namespace EnRAGEPlayerFactionExtension
             double baseAngle = (_faction.MissionsCompleted + 1) * 2.399963229728653 +
                 _faction.MissionType * 0.731;
             double angle = baseAngle;
-            if (_faction.MissionType == MissionPatrol)
+            if (_faction.MissionType == MissionPatrol || _faction.MissionType == MissionReconnaissance)
                 angle += pointIndex * (Math.PI * 2.0 / PatrolWaypointCount);
 
             float radius = _faction.MissionType == MissionStakeout
@@ -664,46 +673,101 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 else if (_faction.MissionType == MissionConvoy)
                 {
-                    if (_objectiveController.AllGuardsDefeated())
+                    if (distance <= 65f && _objectiveController.EncounterSpawned && _faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnEncounterStarted(_faction.MissionType);
+                        Notify("El convoy está a la vista. Busca cobertura y controla a los escoltas antes de acercarte al cargamento.");
+                    }
+
+                    // Requiring proximity prevents a distant firefight from silently advancing the contract.
+                    if (distance <= 65f && (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed))
                     {
                         if (_objectiveController.IsWagonDestroyedOrMissing())
                         {
-                            // Destroying the wagon is a valid fallback completion: do not require
-                            // a loot interaction with a vehicle that no longer exists.
-                            AdvanceMissionToReturn("Has eliminado a los escoltas, pero la carreta ha sido destruida. El convoy queda neutralizado; regresa al campamento.");
+                            AdvanceMissionToReturn("Los escoltas han sido neutralizados y la carreta está destruida o no se encuentra. El convoy queda fuera de servicio; regresa al campamento.");
                         }
-                        else if (distance <= 65f)
+                        else if (!_faction.MissionObjectiveReady)
                         {
-                            if (!_faction.MissionObjectiveReady)
-                            {
-                                _faction.MissionObjectiveReady = true;
-                                SaveFaction();
-                                Notify("Los escoltas han caído. Acércate a la carreta y pulsa la tecla contextual para saquear el cargamento.");
-                            }
-                            else if (_objectiveController.IsPlayerNearLoot(player) && JustPressed(ContextControl))
-                            {
-                                AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
-                            }
+                            _faction.MissionObjectiveReady = true;
+                            SaveFaction();
+                            Notify(_objectiveController.EncounterSpawnFailed
+                                ? "No ha sido posible confirmar todos los escoltas. Registra la carreta con cuidado y pulsa la tecla contextual para recuperar el cargamento."
+                                : "Los escoltas han caído. Acércate a la carreta y pulsa la tecla contextual para saquear el cargamento.");
+                        }
+                        else if (_objectiveController.IsPlayerNearLoot(player) && JustPressed(ContextControl))
+                        {
+                            _story.OnObjectiveInteraction(player, "REVISIÓN: Buscas entre los bultos y rescatas lo que todavía puede servir.");
+                            AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
                         }
                     }
                 }
-                else if (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionCourier)
+                else if (_faction.MissionType == MissionSupplyCache)
+                {
+                    if (_objectiveController.EncounterSpawned && distance <= 45f && _faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnEncounterStarted(_faction.MissionType);
+                        Notify("Hay hombres vigilando el alijo. Despeja la zona antes de tocar las cajas.");
+                    }
+
+                    if (distance <= 5f)
+                    {
+                        bool guardsClear = _objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed;
+                        if (!guardsClear)
+                        {
+                            if (_faction.MissionObjectiveIndex == 0)
+                            {
+                                _faction.MissionObjectiveIndex = 1;
+                                SaveFaction();
+                                _story.OnEncounterStarted(_faction.MissionType);
+                                Notify("El alijo está vigilado. Busca a los defensores antes de intentar recoger las provisiones.");
+                            }
+                        }
+                        else if (_faction.MissionObjectiveIndex < 2)
+                        {
+                            _faction.MissionObjectiveIndex = 2;
+                            _faction.MissionObjectiveReady = true;
+                            SaveFaction();
+                            Notify(_objectiveController.EncounterSpawnFailed
+                                ? "No queda una amenaza activa en la zona. Pulsa la tecla contextual para recoger las provisiones."
+                                : "La zona está despejada. Acércate al alijo y pulsa la tecla contextual para recoger las provisiones.");
+                            _story.OnCheckpoint(_faction.MissionType, 2);
+                        }
+                        else if (JustPressed(ContextControl))
+                        {
+                            _story.OnObjectiveInteraction(player, "RECUPERACIÓN: Revisas las cajas y preparas las provisiones para el regreso.");
+                            AdvanceMissionToReturn("Has recuperado las provisiones del alijo.");
+                        }
+                    }
+                }
+                else if (_faction.MissionType == MissionCourier)
                 {
                     if (distance <= 5f)
                     {
                         if (!_faction.MissionObjectiveReady)
                         {
                             _faction.MissionObjectiveReady = true;
+                            _faction.MissionObjectiveIndex = 1;
                             SaveFaction();
-                            Notify(_faction.MissionType == MissionSupplyCache
-                                ? "Has encontrado el alijo. Pulsa la tecla contextual para recoger las provisiones."
-                                : "Has llegado al punto de encuentro. Pulsa la tecla contextual para entregar el despacho.");
+                            Notify(_objectiveController.CourierAvailable
+                                ? "CONTACTO: Pulsa la tecla contextual para hablar y confirmar la entrega."
+                                : "El contacto no ha aparecido. Puedes dejar el despacho en el punto acordado con la tecla contextual.");
+                            _story.OnCheckpoint(_faction.MissionType, 1);
                         }
-                        else if (JustPressed(ContextControl))
+                        else if (JustPressed(ContextControl) && _faction.MissionObjectiveIndex == 1)
                         {
-                            AdvanceMissionToReturn(_faction.MissionType == MissionSupplyCache
-                                ? "Has recogido las provisiones."
-                                : "El despacho ha sido entregado.");
+                            _faction.MissionObjectiveIndex = 2;
+                            SaveFaction();
+                            _story.OnCourierConversation(_objectiveController.CourierPed, player, false);
+                        }
+                        else if (JustPressed(ContextControl) && _faction.MissionObjectiveIndex >= 2)
+                        {
+                            _story.OnCourierConversation(_objectiveController.CourierPed, player, true);
+                            _story.OnObjectiveInteraction(player, "ENTREGA: Le pasas el despacho al contacto y esperas a que lo guarde.");
+                            AdvanceMissionToReturn("Has entregado el despacho al contacto.");
                         }
                     }
                 }
@@ -736,8 +800,41 @@ namespace EnRAGEPlayerFactionExtension
                         SaveFaction();
                     }
 
-                    if (_faction.MissionWaitProgressMs >= StakeoutDurationMs)
-                        AdvanceMissionToReturn("Has vigilado el cruce durante el tiempo requerido.");
+                    if (_faction.MissionWaitProgressMs >= 6000 && _faction.MissionObjectiveIndex == 0 &&
+                        (_objectiveController.EncounterSpawned || _objectiveController.EncounterSpawnFailed))
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        if (_objectiveController.EncounterSpawned)
+                        {
+                            _story.OnEncounterStarted(_faction.MissionType);
+                            Notify("¡Una partida se aproxima al cruce! Aguanta la posición y neutraliza a los atacantes.");
+                        }
+                        else
+                            Notify("No se ha podido materializar la emboscada; completa el tiempo de vigilancia y vuelve al campamento.");
+                    }
+
+                    if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
+                        (!_objectiveController.EncounterSpawned || _objectiveController.AllGuardsDefeated()))
+                        AdvanceMissionToReturn("Has aguantado la vigilancia, neutralizado la amenaza y confirmado quién utiliza el cruce.");
+                }
+                else if (_faction.MissionType == MissionReconnaissance && distance <= 24f)
+                {
+                    if (_faction.MissionObjectiveIndex == 0)
+                    {
+                        _faction.MissionObjectiveIndex = 1;
+                        SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
+                        SaveFaction();
+                        RemoveTargetBlip();
+                        EnsureTargetBlip();
+                        _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex);
+                        Notify("Primer punto inspeccionado. Sigue las marcas hasta el segundo lugar para confirmar el rastro.");
+                    }
+                    else
+                    {
+                        _story.OnCheckpoint(_faction.MissionType, 2);
+                        AdvanceMissionToReturn("Has inspeccionado los dos puntos y reconstruido el rastro.");
+                    }
                 }
                 else if (distance <= 24f)
                 {
@@ -759,6 +856,8 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (_faction.MissionType == MissionSupplyCache)
                 DeleteSupplyCacheProp();
+            _story.OnMissionReturning(_faction.MissionType);
+            _objectiveController.CleanupConvoy();
             _faction.MissionStage = 2;
             _faction.MissionObjectiveReady = false;
             _faction.MissionWaitProgressMs = 0;
@@ -803,6 +902,7 @@ namespace EnRAGEPlayerFactionExtension
             RemoveTargetBlip();
             Notify("Misión completada: " + completedName + ". +" + prestigeReward + " prestigio, +" +
                 suppliesReward + " suministros y $" + treasuryReward + " añadidos a la tesorería de la facción.");
+            _story.OnMissionCompleted(_faction.LastMissionType);
             Log.Write("Independent mission completed: " + completedName + ". Count=" + _faction.MissionsCompleted +
                 ", mission prestige=" + _faction.MissionPrestige + ", resources=+" + suppliesReward +
                 " supplies/+$" + treasuryReward + ".");

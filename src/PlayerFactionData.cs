@@ -82,6 +82,8 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 49)] public int LastMissionType { get; set; }
         [DataMember(Order = 50)] public bool MissionEncounterSpawned { get; set; }
         [DataMember(Order = 51)] public int MissionEncounterProcessId { get; set; }
+        // Process-scoped handover contact used by the courier contract; validated by model and target distance.
+        [DataMember(Order = 52)] public int MissionCourierPedHandle { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -126,6 +128,8 @@ namespace EnRAGEPlayerFactionExtension
                         data.MissionConvoyEnemyHandles = new List<int>();
                     if (data.SchemaVersion < 16)
                         data.LastMissionType = -1;
+                    if (data.SchemaVersion < 17)
+                        data.MissionCourierPedHandle = 0;
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -135,7 +139,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(16, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(17, data.SchemaVersion);
                     return data;
                 }
             }
