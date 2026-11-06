@@ -15,7 +15,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong PlaySoundFrontendHash = 0x67C540AA08E4A6F5UL;
         private const ulong TriggerMusicEventHash = 0x706D57B0F50DA710UL;
         private const ulong RequestAnimDictHash = 0xA862A2AD321F94B4UL;
-        private const ulong HasAnimDictLoadedHash = 0xD031A9162D01088CUL;
+        private const ulong HasAnimDictLoadedHash = 0x27FF6FE8009B40CAUL;
         private const ulong TaskPlayAnimHash = 0xEA47FE3719165B94UL;
         private const ulong TurnPedToFaceEntityHash = 0x5AD23D40115353ACUL;
         private const string CombatMusicStart = "DUEL_GENERAL_START";
