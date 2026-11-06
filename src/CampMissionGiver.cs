@@ -15,7 +15,6 @@ namespace EnRAGEPlayerFactionExtension
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         private const int ContextControl = 1980406895;
-        private const ulong IsControlJustPressedHash = 0x580417101DDB492FUL;
         private const ulong PromptGetGroupForEntityHash = 0xB796970BD125FCE8UL;
         private const ulong PromptHasHoldModeCompletedHash = 0xE0F65F0640EF0617UL;
         private const ulong PromptHasStandardModeCompletedHash = 0xC92AC953F0A982AEUL;
@@ -52,6 +51,12 @@ namespace EnRAGEPlayerFactionExtension
         private int _lootPromptEntityHandle;
         private bool _lootPromptArmed = true;
         private bool _lootPromptJustCompleted;
+        private int _objectivePrompt;
+        private int _objectivePromptGroup;
+        private int _objectivePromptEntityHandle;
+        private string _objectivePromptLabel = string.Empty;
+        private bool _objectivePromptArmed = true;
+        private bool _objectivePromptJustCompleted;
         private int _targetBlip;
         private int _nextSpawnAt;
         private bool _spawnDelayInitialized;
@@ -68,7 +73,7 @@ namespace EnRAGEPlayerFactionExtension
             _bridge = bridge;
             _faction = faction;
             _objectiveController = new MissionObjectiveController(faction);
-            _story = new MissionStoryDirector(Notify);
+            _story = new MissionStoryDirector();
         }
 
         internal void Maintain(Ped player, bool interactionBlocked)
@@ -77,6 +82,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 DeleteSupplyCacheProp();
                 RemoveLootPrompt();
+                RemoveObjectivePrompt();
                 _objectiveController.CleanupConvoy();
                 _story.OnScriptAborted();
                 DeletePed();
@@ -88,6 +94,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 SetPromptVisible(false);
                 SetLootPromptVisible(false);
+                SetObjectivePromptVisible(false);
                 return;
             }
 
@@ -96,27 +103,35 @@ namespace EnRAGEPlayerFactionExtension
                 campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (campCentre == Vector3.Zero) return;
 
-            if (_faction.MissionStage == 1 && _faction.MissionType == MissionSupplyCache)
+            if (_faction.MissionStage == 1 &&
+                MissionCatalog.Get(_faction.MissionType).ObjectiveType == MissionObjectiveType.RecoverSupplies)
                 MaintainSupplyCacheProp(player);
             else if (_faction.MissionCachePropHandle != 0)
             {
                 DeleteSupplyCacheProp();
                 SaveFaction();
             }
+            MissionObjectiveType activeObjectiveType = MissionCatalog.Get(_faction.MissionType).ObjectiveType;
             if (_faction.MissionStage == 1 &&
-                (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionStakeout ||
-                 _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy))
+                (activeObjectiveType == MissionObjectiveType.RecoverSupplies ||
+                 activeObjectiveType == MissionObjectiveType.HoldArea ||
+                 activeObjectiveType == MissionObjectiveType.DeliverDispatch ||
+                 activeObjectiveType == MissionObjectiveType.InterceptConvoy))
                 _objectiveController.Maintain(player);
 
             _story.Tick();
-            if (_faction.MissionStage == 1 && _faction.MissionType == MissionConvoy)
+            if (_faction.MissionStage == 1 && activeObjectiveType == MissionObjectiveType.InterceptConvoy)
                 MaintainConvoyLootPrompt(player);
             else
                 RemoveLootPrompt();
+            MaintainObjectivePrompt(player);
 
             UpdateMissionProgress(player, campCentre);
-            if (_faction.MissionStage != 1 || _faction.MissionType != MissionConvoy)
+            if (_faction.MissionStage != 1 ||
+                MissionCatalog.Get(_faction.MissionType).ObjectiveType != MissionObjectiveType.InterceptConvoy)
                 RemoveLootPrompt();
+            if (_faction.MissionStage != 1)
+                RemoveObjectivePrompt();
             if (_faction.MissionStage > 0) EnsureTargetBlip();
             else RemoveTargetBlip();
 
@@ -165,6 +180,7 @@ namespace EnRAGEPlayerFactionExtension
             SetPromptVisible(false);
             RemovePrompt();
             RemoveLootPrompt();
+            RemoveObjectivePrompt();
             RemoveTargetBlip();
             _story.OnScriptAborted();
             // Keep the NPC and its handle alive; the next ScriptHook runtime reconnects to it.
@@ -269,13 +285,12 @@ namespace EnRAGEPlayerFactionExtension
             SetPromptVisible(true);
             ActivatePromptGroup(group);
             bool completed = PromptCompleted(_prompt);
-            bool contextPressed = JustPressed(ContextControl);
-            if (!completed && !contextPressed)
+            if (!completed)
             {
                 _promptArmed = true;
                 return;
             }
-            if (!_promptArmed && !contextPressed) return;
+            if (!_promptArmed) return;
 
             _promptArmed = false;
             SetPromptVisible(false);
@@ -324,16 +339,6 @@ namespace EnRAGEPlayerFactionExtension
             }
             catch { }
             try { return Function.Call<bool>(PromptHasStandardModeCompletedHash, new InputArgument[] { prompt }); }
-            catch { return false; }
-        }
-
-        private bool JustPressed(int control)
-        {
-            try
-            {
-                if (Function.Call<bool>(IsControlJustPressedHash, new InputArgument[] { 0, control })) return true;
-                return Function.Call<bool>(IsControlJustPressedHash, new InputArgument[] { 2, control });
-            }
             catch { return false; }
         }
 
@@ -420,8 +425,9 @@ namespace EnRAGEPlayerFactionExtension
         private void MaintainConvoyLootPrompt(Ped player)
         {
             _lootPromptJustCompleted = false;
+            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
             bool missionReady = _faction.MissionStage == 1 &&
-                _faction.MissionType == MissionConvoy &&
+                definition.ObjectiveType == MissionObjectiveType.InterceptConvoy &&
                 _faction.MissionObjectiveReady &&
                 (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed) &&
                 !_objectiveController.IsWagonDestroyedOrMissing();
@@ -435,14 +441,8 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             Vehicle wagon = _objectiveController.CargoWagon;
-            if (wagon == null || !wagon.Exists())
-            {
-                SetLootPromptVisible(false);
-                _lootPromptArmed = true;
-                return;
-            }
-
-            if (player.Position.DistanceTo(wagon.Position) > 7.5f)
+            if (wagon == null || !wagon.Exists() ||
+                player.Position.DistanceTo(wagon.Position) > definition.InteractionRadius)
             {
                 SetLootPromptVisible(false);
                 _lootPromptArmed = true;
@@ -450,10 +450,7 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             int group;
-            try
-            {
-                group = Function.Call<int>(PromptGetGroupForEntityHash, new InputArgument[] { wagon.Handle });
-            }
+            try { group = Function.Call<int>(PromptGetGroupForEntityHash, new InputArgument[] { wagon.Handle }); }
             catch (Exception ex)
             {
                 Log.Write("Cargo prompt group lookup warning: " + ex.Message);
@@ -510,8 +507,10 @@ namespace EnRAGEPlayerFactionExtension
                     ? Enum.ToObject(controlType, ContextControl)
                     : (object)ContextControl;
 
+                string promptLabel = MissionCatalog.Get(_faction.MissionType).PromptLabel;
+                if (string.IsNullOrWhiteSpace(promptLabel)) promptLabel = "Saquear cargamento";
                 _lootPrompt = Convert.ToInt32(make.Invoke(null,
-                    new object[] { control, "Saquear cargamento", true, group }));
+                    new object[] { control, promptLabel, true, group }));
                 if (_lootPrompt == 0) return false;
                 _lootPromptGroup = group;
                 _lootPromptEntityHandle = entityHandle;
@@ -545,7 +544,8 @@ namespace EnRAGEPlayerFactionExtension
                 ulong label = Convert.ToUInt64(forever.Invoke(null, new object[] { "Cargamento del convoy" }));
                 Function.Call(SetAmbientPromptGroupThisFrameHash, new InputArgument[]
                 {
-                    entityHandle, 7.5f, 2, 0, group, new InputArgument(label), 0
+                    entityHandle, MissionCatalog.Get(_faction.MissionType).InteractionRadius,
+                    2, 0, group, new InputArgument(label), 0
                 });
             }
             catch (Exception ex)
@@ -592,31 +592,204 @@ namespace EnRAGEPlayerFactionExtension
             _lootPromptJustCompleted = false;
         }
 
+        private void MaintainObjectivePrompt(Ped player)
+        {
+            _objectivePromptJustCompleted = false;
+            int entityHandle = 0;
+            string promptLabel = string.Empty;
+            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+
+            if (_faction.MissionStage == 1 && _faction.MissionObjectiveReady &&
+                player != null && player.Exists() && !player.IsDead &&
+                !player.IsOnMount && !player.IsInVehicle)
+            {
+                if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies &&
+                    _faction.MissionObjectiveIndex >= 2 &&
+                    (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed) &&
+                    _supplyCache != null && _supplyCache.Exists() &&
+                    player.Position.DistanceTo(_supplyCache.Position) <= definition.InteractionRadius)
+                {
+                    entityHandle = _supplyCache.Handle;
+                    promptLabel = string.IsNullOrWhiteSpace(definition.PromptLabel)
+                        ? "Recoger provisiones" : definition.PromptLabel;
+                }
+                else if (definition.ObjectiveType == MissionObjectiveType.DeliverDispatch &&
+                    _faction.MissionObjectiveIndex >= 1)
+                {
+                    Ped courier = _objectiveController.CourierPed;
+                    if (courier != null && courier.Exists() &&
+                        player.Position.DistanceTo(courier.Position) <= definition.InteractionRadius)
+                    {
+                        entityHandle = courier.Handle;
+                        promptLabel = _faction.MissionObjectiveIndex == 1
+                            ? (string.IsNullOrWhiteSpace(definition.FirstPromptLabel) ? "Hablar con el contacto" : definition.FirstPromptLabel)
+                            : (string.IsNullOrWhiteSpace(definition.SecondPromptLabel) ? "Entregar despacho" : definition.SecondPromptLabel);
+                    }
+                }
+            }
+
+            if (entityHandle == 0 || string.IsNullOrWhiteSpace(promptLabel))
+            {
+                SetObjectivePromptVisible(false);
+                _objectivePromptArmed = true;
+                return;
+            }
+
+            int group;
+            try { group = Function.Call<int>(PromptGetGroupForEntityHash, new InputArgument[] { entityHandle }); }
+            catch (Exception ex)
+            {
+                Log.Write("Objective prompt group lookup warning: " + ex.Message);
+                SetObjectivePromptVisible(false);
+                return;
+            }
+            if (group == 0)
+            {
+                SetObjectivePromptVisible(false);
+                return;
+            }
+
+            if (_objectivePrompt == 0 || _objectivePromptGroup != group ||
+                _objectivePromptEntityHandle != entityHandle ||
+                !string.Equals(_objectivePromptLabel, promptLabel, StringComparison.Ordinal) ||
+                !PromptValid(_objectivePrompt))
+            {
+                RemoveObjectivePrompt();
+                if (!TryCreateObjectivePrompt(group, entityHandle, promptLabel)) return;
+            }
+
+            SetObjectivePromptVisible(true);
+            ActivateEntityPromptGroup(entityHandle, group, definition.Title,
+                Math.Max(definition.InteractionRadius, 3.5f));
+            bool completed = PromptCompleted(_objectivePrompt);
+            if (completed && _objectivePromptArmed)
+            {
+                _objectivePromptJustCompleted = true;
+                _objectivePromptArmed = false;
+                SetObjectivePromptVisible(false);
+            }
+            else if (!completed)
+            {
+                _objectivePromptArmed = true;
+            }
+        }
+
+        private bool TryCreateObjectivePrompt(int group, int entityHandle, string label)
+        {
+            try
+            {
+                Type mainType = _bridge.MainInstance != null ? _bridge.MainInstance.GetType() : null;
+                if (mainType == null) return false;
+                MethodInfo make = mainType.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "MakePrompt" && m.GetParameters().Length == 4);
+                if (make == null)
+                {
+                    Log.Write("Objective prompt creation failed: enRAGE MakePrompt helper not found.");
+                    return false;
+                }
+
+                Type controlType = make.GetParameters()[0].ParameterType;
+                object control = controlType.IsEnum
+                    ? Enum.ToObject(controlType, ContextControl)
+                    : (object)ContextControl;
+                _objectivePrompt = Convert.ToInt32(make.Invoke(null,
+                    new object[] { control, label, true, group }));
+                if (_objectivePrompt == 0) return false;
+                _objectivePromptGroup = group;
+                _objectivePromptEntityHandle = entityHandle;
+                _objectivePromptLabel = label;
+                _objectivePromptArmed = true;
+                Log.Write("Objective prompt created. Label=" + label + ", prompt=" +
+                    _objectivePrompt + ", entity=" + entityHandle + ".");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Objective prompt creation warning: " + ex.Message);
+                RemoveObjectivePrompt();
+                return false;
+            }
+        }
+
+        private void ActivateEntityPromptGroup(int entityHandle, int group, string groupName, float radius)
+        {
+            try
+            {
+                Assembly assembly = _bridge.MainInstance != null
+                    ? _bridge.MainInstance.GetType().Assembly
+                    : AppDomain.CurrentDomain.GetAssemblies()
+                        .FirstOrDefault(a => a.GetType("NemesisSystem.UiDraw", false) != null);
+                Type uiDraw = assembly != null ? assembly.GetType("NemesisSystem.UiDraw", false) : null;
+                MethodInfo forever = uiDraw != null ? uiDraw.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "ForeverVarString" && m.GetParameters().Length == 1 &&
+                    m.GetParameters()[0].ParameterType == typeof(string)) : null;
+                if (forever == null) return;
+
+                string safeGroupName = string.IsNullOrWhiteSpace(groupName) ? "Objetivo de misión" : groupName;
+                ulong label = Convert.ToUInt64(forever.Invoke(null, new object[] { safeGroupName }));
+                Function.Call(SetAmbientPromptGroupThisFrameHash, new InputArgument[]
+                {
+                    entityHandle, radius, 2, 0, group, new InputArgument(label), 0
+                });
+            }
+            catch (Exception ex) { Log.Write("Objective prompt activation warning: " + ex.Message); }
+        }
+
+        private void SetObjectivePromptVisible(bool visible)
+        {
+            if (_objectivePrompt == 0) return;
+            try
+            {
+                Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
+                if (hud == null) return;
+                InvokeHud(hud, "_UI_PROMPT_SET_VISIBLE", _objectivePrompt, visible);
+                InvokeHud(hud, "_UI_PROMPT_SET_ENABLED", _objectivePrompt, visible);
+            }
+            catch (Exception ex) { Log.Write("Objective prompt visibility warning: " + ex.Message); }
+        }
+
+        private void RemoveObjectivePrompt()
+        {
+            SetObjectivePromptVisible(false);
+            if (_objectivePrompt != 0)
+            {
+                try
+                {
+                    Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
+                    if (hud != null) InvokeHud(hud, "_UI_PROMPT_DELETE", _objectivePrompt);
+                }
+                catch (Exception ex) { Log.Write("Objective prompt delete warning: " + ex.Message); }
+            }
+            _objectivePrompt = 0;
+            _objectivePromptGroup = 0;
+            _objectivePromptEntityHandle = 0;
+            _objectivePromptLabel = string.Empty;
+            _objectivePromptArmed = true;
+            _objectivePromptJustCompleted = false;
+        }
+
         private void OnInteract()
         {
             if (_faction.MissionStage > 0)
             {
+                MissionDefinition active = MissionCatalog.Get(_faction.MissionType);
                 string status;
                 if (_faction.MissionStage == 2)
                     status = "Vuelve al campamento para entregar el encargo.";
                 else if (_faction.MissionStage == 3)
                     status = "La recompensa está pendiente; se entregará cuando los recursos de la facción estén disponibles.";
-                else if (_faction.MissionObjectiveReady && (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionCourier))
-                    status = _faction.MissionType == MissionSupplyCache
-                        ? "Estás junto al alijo. Pulsa la tecla contextual para recoger las provisiones."
-                        : "Has llegado al punto de encuentro. Pulsa la tecla contextual para entregar el despacho.";
-                else if (_faction.MissionType == MissionConvoy)
-                    status = _faction.MissionObjectiveReady
-                        ? "El convoy está despejado. Busca el cargamento y pulsa la tecla contextual junto a la carreta."
-                        : "Intercepta el convoy y elimina a todos los escoltas antes de saquear el cargamento.";
-                else if (_faction.MissionType == MissionStakeout)
-                    status = "Vigila el cruce durante 18 segundos dentro del perímetro marcado. El reloj se pausa si te alejas; puede aparecer una partida.";
-                else if (_faction.MissionType == MissionPatrol)
-                    status = "Patrulla activa: visita el punto " + (_faction.MissionObjectiveIndex + 1) + " de " + PatrolWaypointCount + " y continúa con los siguientes.";
+                else if (active.ObjectiveType == MissionObjectiveType.RecoverSupplies)
+                    status = "Encuentra el alijo y despeja la zona. Al estar listo, aparecerá la interacción contextual.";
+                else if (active.ObjectiveType == MissionObjectiveType.DeliverDispatch)
+                    status = "Localiza al contacto marcado. La conversación y la entrega se activan con sus prompts contextuales.";
+                else if (active.ObjectiveType == MissionObjectiveType.InterceptConvoy)
+                    status = "Localiza el convoy y elimina a los escoltas. El cargamento tendrá un prompt contextual cuando la zona esté despejada.";
+                else if (active.ObjectiveType == MissionObjectiveType.HoldArea)
+                    status = "Mantente dentro del perímetro marcado hasta completar la vigilancia.";
                 else
-                    status = "Inspecciona el punto marcado en el mapa y vuelve al campamento.";
+                    status = active.StartInstruction;
                 _story.PlayReminderCue();
-                Notify("MISIÓN ACTIVA: " + status);
+                _story.ShowMissionStatus("MISIÓN ACTIVA: " + status, 3000);
                 return;
             }
 
@@ -625,12 +798,13 @@ namespace EnRAGEPlayerFactionExtension
                 centre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (centre == Vector3.Zero)
             {
-                Notify("No se pudo localizar el centro del campamento para asignar una misión.");
+                _story.ShowMissionStatus("No se pudo localizar el centro del campamento para asignar una misión.");
                 return;
             }
 
-            // Weighted selection varies the contract and avoids repeating the previous completion.
+            MissionCatalog.Reload();
             RemoveLootPrompt();
+            RemoveObjectivePrompt();
             _objectiveController.CleanupConvoy();
             if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
             Random missionRandom = new Random(unchecked(Game.GameTime * 397 ^ _faction.MissionsCompleted * 7919 ^ _faction.MissionPrestige));
@@ -658,15 +832,15 @@ namespace EnRAGEPlayerFactionExtension
 
         private unsafe void SetMissionTarget(Vector3 centre, int pointIndex)
         {
+            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
             double baseAngle = (_faction.MissionsCompleted + 1) * 2.399963229728653 +
                 _faction.MissionType * 0.731;
             double angle = baseAngle;
-            if (_faction.MissionType == MissionPatrol || _faction.MissionType == MissionReconnaissance)
-                angle += pointIndex * (Math.PI * 2.0 / PatrolWaypointCount);
+            if (definition.ObjectiveType == MissionObjectiveType.PatrolRoute ||
+                (definition.ObjectiveType == MissionObjectiveType.ReachLocation && definition.WaypointCount > 1))
+                angle += pointIndex * (Math.PI * 2.0 / definition.WaypointCount);
 
-            float radius = _faction.MissionType == MissionStakeout
-                ? 235f
-                : (_faction.MissionType == MissionPatrol ? 285f : (_faction.MissionType == MissionConvoy ? 315f : 260f));
+            float radius = definition.TargetDistance;
             radius += ((_faction.MissionsCompleted + pointIndex) % 3) * 18f;
             radius += Math.Max(0, Math.Min(2, _faction.MissionDifficulty)) * 22f;
 
@@ -675,8 +849,6 @@ namespace EnRAGEPlayerFactionExtension
                 centre.Y + (float)Math.Sin(angle) * radius,
                 centre.Z + 0.35f);
 
-            // Try several nearby bearings and radii instead of blindly accepting one arbitrary point.
-            // Only accept a candidate for which the ground native returns a plausible height.
             bool foundGround = false;
             for (int attempt = 0; attempt < 8; attempt++)
             {
@@ -722,15 +894,20 @@ namespace EnRAGEPlayerFactionExtension
         private static string GetMissionObjectiveBlipName(PlayerFactionData faction)
         {
             if (faction == null) return "Objetivo de misión";
-            switch (faction.MissionType)
-            {
-                case MissionPatrol: return "Patrulla: punto " + (faction.MissionObjectiveIndex + 1) + "/" + PatrolWaypointCount;
-                case MissionSupplyCache: return "Alijo de provisiones";
-                case MissionStakeout: return "Cruce de vigilancia";
-                case MissionCourier: return "Punto de entrega";
-                case MissionConvoy: return "Convoy enemigo";
-                default: return "Reconocimiento de ruta";
-            }
+            MissionDefinition definition = MissionCatalog.Get(faction.MissionType);
+            if (definition.ObjectiveType == MissionObjectiveType.PatrolRoute)
+                return "Patrulla: punto " + (faction.MissionObjectiveIndex + 1) + "/" + definition.WaypointCount;
+            if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies)
+                return "Alijo de provisiones";
+            if (definition.ObjectiveType == MissionObjectiveType.HoldArea)
+                return "Cruce de vigilancia";
+            if (definition.ObjectiveType == MissionObjectiveType.DeliverDispatch)
+                return "Punto de entrega";
+            if (definition.ObjectiveType == MissionObjectiveType.InterceptConvoy)
+                return "Convoy enemigo";
+            if (definition.WaypointCount > 1)
+                return definition.Title + ": punto " + (faction.MissionObjectiveIndex + 1) + "/" + definition.WaypointCount;
+            return definition.Title;
         }
 
         private void GetMissionReward(int missionType, out int supplies, out int treasury, out int prestige)
@@ -835,16 +1012,20 @@ namespace EnRAGEPlayerFactionExtension
 
         private void UpdateMissionProgress(Ped player, Vector3 campCentre)
         {
+            if (player == null || !player.Exists()) return;
+
             if (_faction.MissionStage == 1)
             {
+                MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+                MissionObjectiveType objectiveType = definition.ObjectiveType;
                 Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
                 float distance = player.Position.DistanceTo(target);
 
-                if (_faction.MissionType == MissionPatrol)
+                if (objectiveType == MissionObjectiveType.PatrolRoute)
                 {
-                    if (distance <= 24f)
+                    if (distance <= definition.ObjectiveRadius)
                     {
-                        if (_faction.MissionObjectiveIndex + 1 < PatrolWaypointCount)
+                        if (_faction.MissionObjectiveIndex + 1 < definition.WaypointCount)
                         {
                             _faction.MissionObjectiveIndex++;
                             SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
@@ -855,25 +1036,27 @@ namespace EnRAGEPlayerFactionExtension
                         }
                         else
                         {
-                            AdvanceMissionToReturn("Has completado la patrulla de frontera.");
+                            AdvanceMissionToReturn("Has completado " + definition.Title + ".");
                         }
                     }
                 }
-                else if (_faction.MissionType == MissionConvoy)
+                else if (objectiveType == MissionObjectiveType.InterceptConvoy)
                 {
-                    if (distance <= 65f && _objectiveController.EncounterSpawned && _faction.MissionObjectiveIndex == 0)
+                    float encounterRadius = Math.Max(60f, definition.ObjectiveRadius + 40f);
+                    if (distance <= encounterRadius && _objectiveController.EncounterSpawned &&
+                        _faction.MissionObjectiveIndex == 0)
                     {
                         _faction.MissionObjectiveIndex = 1;
                         SaveFaction();
                         _story.OnEncounterStarted(_faction.MissionType);
                     }
 
-                    // Requiring proximity prevents a distant firefight from silently advancing the contract.
-                    if (distance <= 65f && (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed))
+                    if (distance <= encounterRadius &&
+                        (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed))
                     {
                         if (_objectiveController.IsWagonDestroyedOrMissing())
                         {
-                            AdvanceMissionToReturn("Los escoltas han sido neutralizados y la carreta está destruida o no se encuentra. El convoy queda fuera de servicio; regresa al campamento.");
+                            AdvanceMissionToReturn("Los escoltas han sido neutralizados, pero la carreta está destruida o no se encuentra. Regresa al campamento.");
                         }
                         else if (!_faction.MissionObjectiveReady)
                         {
@@ -881,28 +1064,29 @@ namespace EnRAGEPlayerFactionExtension
                             SaveFaction();
                             _story.OnLootAvailable(_faction.MissionType);
                         }
-                        else if (_objectiveController.IsPlayerNearLoot(player) && _lootPromptJustCompleted)
+                        else if (_objectiveController.IsPlayerNearLoot(player, definition.InteractionRadius) &&
+                                 _lootPromptJustCompleted)
                         {
                             _story.OnObjectiveInteraction(player, "REVISIÓN: Buscas entre los bultos y rescatas lo que todavía puede servir.");
                             AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
                         }
                     }
                 }
-                else if (_faction.MissionType == MissionSupplyCache)
+                else if (objectiveType == MissionObjectiveType.RecoverSupplies)
                 {
-                    if (_objectiveController.EncounterSpawned && distance <= 45f && _faction.MissionObjectiveIndex == 0)
+                    float encounterRadius = Math.Max(45f, definition.ObjectiveRadius + 20f);
+                    if (_objectiveController.EncounterSpawned && distance <= encounterRadius &&
+                        _faction.MissionObjectiveIndex == 0)
                     {
                         _faction.MissionObjectiveIndex = 1;
                         SaveFaction();
                         _story.OnEncounterStarted(_faction.MissionType);
                     }
 
-                    if (distance <= 12f && _faction.MissionObjectiveIndex >= 2 && _faction.MissionObjectiveReady)
-                        _story.ShowInteractionHint("para recoger las provisiones");
-
-                    if (distance <= 5f)
+                    if (distance <= definition.InteractionRadius)
                     {
-                        bool guardsClear = _objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed;
+                        bool guardsClear = _objectiveController.AllGuardsDefeated() ||
+                            _objectiveController.EncounterSpawnFailed;
                         if (!guardsClear)
                         {
                             if (_faction.MissionObjectiveIndex == 0)
@@ -919,36 +1103,34 @@ namespace EnRAGEPlayerFactionExtension
                             SaveFaction();
                             _story.OnLootAvailable(_faction.MissionType);
                         }
-                        else if (JustPressed(ContextControl))
+                        else if (_objectivePromptJustCompleted)
                         {
                             _story.OnObjectiveInteraction(player, "RECUPERACIÓN: Revisas las cajas y preparas las provisiones para el regreso.");
                             AdvanceMissionToReturn("Has recuperado las provisiones del alijo.");
                         }
                     }
                 }
-                else if (_faction.MissionType == MissionCourier)
+                else if (objectiveType == MissionObjectiveType.DeliverDispatch)
                 {
-                    if (distance <= 7f && _faction.MissionObjectiveReady)
-                        _story.ShowInteractionHint(_faction.MissionObjectiveIndex == 1
-                            ? "para hablar con el contacto"
-                            : "para entregar el despacho");
-
-                    if (distance <= 5f)
+                    if (distance <= definition.ObjectiveRadius && !_faction.MissionObjectiveReady)
                     {
-                        if (!_faction.MissionObjectiveReady)
-                        {
-                            _faction.MissionObjectiveReady = true;
-                            _faction.MissionObjectiveIndex = 1;
-                            SaveFaction();
-                            _story.OnCheckpoint(_faction.MissionType, 1);
-                        }
-                        else if (JustPressed(ContextControl) && _faction.MissionObjectiveIndex == 1)
+                        _faction.MissionObjectiveReady = true;
+                        _faction.MissionObjectiveIndex = 1;
+                        SaveFaction();
+                        _story.OnCheckpoint(_faction.MissionType, 1);
+                    }
+
+                    if (_faction.MissionObjectiveReady &&
+                        _objectiveController.CourierAvailable &&
+                        _objectivePromptJustCompleted)
+                    {
+                        if (_faction.MissionObjectiveIndex == 1)
                         {
                             _faction.MissionObjectiveIndex = 2;
                             SaveFaction();
                             _story.OnCourierConversation(_objectiveController.CourierPed, player, false);
                         }
-                        else if (JustPressed(ContextControl) && _faction.MissionObjectiveIndex >= 2)
+                        else if (_faction.MissionObjectiveIndex >= 2)
                         {
                             _story.OnCourierConversation(_objectiveController.CourierPed, player, true);
                             _story.OnObjectiveInteraction(player, "ENTREGA: Le pasas el despacho al contacto y esperas a que lo guarde.");
@@ -956,13 +1138,13 @@ namespace EnRAGEPlayerFactionExtension
                         }
                     }
                 }
-                else if (_faction.MissionType == MissionStakeout)
+                else if (objectiveType == MissionObjectiveType.HoldArea)
                 {
                     int now = Game.GameTime;
-                    bool insidePerimeter = distance <= StakeoutRadius;
+                    int durationMs = Math.Max(5000, definition.DurationSeconds * 1000);
+                    int encounterAtMs = definition.EncounterAtSeconds * 1000;
+                    bool insidePerimeter = distance <= definition.AreaRadius;
 
-                    // Credit elapsed time while inside. The former < 1000 ms gate discarded progress
-                    // during script stalls and streaming hitches, causing the objective to stall.
                     if (!_missionTimerInitialized)
                     {
                         _lastMissionProgressTickAt = now;
@@ -972,11 +1154,8 @@ namespace EnRAGEPlayerFactionExtension
                     {
                         int elapsed = now - _lastMissionProgressTickAt;
                         if (insidePerimeter && elapsed > 0)
-                        {
-                            int creditedElapsed = Math.Min(elapsed, 2000);
-                            _faction.MissionWaitProgressMs = Math.Min(
-                                StakeoutDurationMs, _faction.MissionWaitProgressMs + creditedElapsed);
-                        }
+                            _faction.MissionWaitProgressMs = Math.Min(durationMs,
+                                _faction.MissionWaitProgressMs + elapsed);
                         _lastMissionProgressTickAt = now;
                     }
 
@@ -991,20 +1170,20 @@ namespace EnRAGEPlayerFactionExtension
                     if (_faction.MissionObjectiveReady && now >= _nextStakeoutStatusAt)
                     {
                         _nextStakeoutStatusAt = now + 5000;
-                        if (!insidePerimeter && _faction.MissionWaitProgressMs < StakeoutDurationMs)
+                        if (!insidePerimeter && _faction.MissionWaitProgressMs < durationMs)
                         {
                             _story.ShowMissionStatus(
                                 "VIGILANCIA: fuera del perímetro; el reloj está detenido. Regresa al punto marcado.", 2300);
                         }
-                        else if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
+                        else if (_faction.MissionWaitProgressMs >= durationMs &&
                                  _objectiveController.EncounterSpawned && !_objectiveController.AllGuardsDefeated())
                         {
                             _story.ShowMissionStatus(
                                 "VIGILANCIA: el tiempo terminó. Neutraliza a los atacantes para asegurar el cruce.", 2300);
                         }
-                        else if (_faction.MissionWaitProgressMs < StakeoutDurationMs)
+                        else if (_faction.MissionWaitProgressMs < durationMs)
                         {
-                            int secondsRemaining = (StakeoutDurationMs - _faction.MissionWaitProgressMs + 999) / 1000;
+                            int secondsRemaining = (durationMs - _faction.MissionWaitProgressMs + 999) / 1000;
                             _story.ShowMissionStatus(
                                 "VIGILANCIA: quedan " + secondsRemaining +
                                 " segundos. Mantente dentro del perímetro marcado.", 2200);
@@ -1017,7 +1196,9 @@ namespace EnRAGEPlayerFactionExtension
                         SaveFaction();
                     }
 
-                    if (_faction.MissionWaitProgressMs >= 6000 && _faction.MissionObjectiveIndex == 0 &&
+                    if (definition.SpawnEncounter &&
+                        _faction.MissionWaitProgressMs >= encounterAtMs &&
+                        _faction.MissionObjectiveIndex == 0 &&
                         (_objectiveController.EncounterSpawned || _objectiveController.EncounterSpawnFailed))
                     {
                         _faction.MissionObjectiveIndex = 1;
@@ -1029,40 +1210,39 @@ namespace EnRAGEPlayerFactionExtension
                                 "VIGILANCIA: no se ha acercado ninguna partida. Termina de observar el cruce.", 2400);
                     }
 
-                    // Complete after 18 seconds if no encounter could be created, or after
-                    // the spawned attackers have been eliminated.
-                    if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
-                        (!_objectiveController.EncounterSpawned || _objectiveController.AllGuardsDefeated()))
-                        AdvanceMissionToReturn(
-                            "Has vigilado el cruce durante 18 segundos y confirmado quién utiliza la ruta.");
-                }
-                
-                else if (_faction.MissionType == MissionReconnaissance && distance <= 24f)
-                {
-                    if (_faction.MissionObjectiveIndex == 0)
+                    if (_faction.MissionWaitProgressMs >= durationMs &&
+                        (!_objectiveController.EncounterSpawned || _objectiveController.AllGuardsDefeated() ||
+                         _objectiveController.EncounterSpawnFailed))
                     {
-                        _faction.MissionObjectiveIndex = 1;
-                        SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
-                        SaveFaction();
-                        RemoveTargetBlip();
-                        EnsureTargetBlip();
-                        _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex);
-                    }
-                    else
-                    {
-                        _story.OnCheckpoint(_faction.MissionType, 2);
-                        AdvanceMissionToReturn("Has inspeccionado los dos puntos y reconstruido el rastro.");
+                        AdvanceMissionToReturn("Has mantenido la posición durante " +
+                            definition.DurationSeconds + " segundos y confirmado quién utiliza la ruta.");
                     }
                 }
-                else if (distance <= 24f)
+                else // ReachLocation
                 {
-                    AdvanceMissionToReturn("Punto de reconocimiento inspeccionado.");
+                    if (distance <= definition.ObjectiveRadius)
+                    {
+                        if (_faction.MissionObjectiveIndex + 1 < definition.WaypointCount)
+                        {
+                            _faction.MissionObjectiveIndex++;
+                            SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
+                            SaveFaction();
+                            RemoveTargetBlip();
+                            EnsureTargetBlip();
+                            _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex);
+                        }
+                        else
+                        {
+                            _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex + 1);
+                            AdvanceMissionToReturn("Has completado " + definition.Title + ".");
+                        }
+                    }
                 }
             }
 
             if (_faction.MissionStage == 2 && player.Position.DistanceTo(campCentre) <= 14f)
             {
-                _faction.MissionStage = 3; // Persist a claim state before paying to avoid repeated per-tick rewards.
+                _faction.MissionStage = 3;
                 SaveFaction();
             }
 
@@ -1072,8 +1252,11 @@ namespace EnRAGEPlayerFactionExtension
 
         private void AdvanceMissionToReturn(string message)
         {
-            if (_faction.MissionType == MissionSupplyCache)
+            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+            if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies)
                 DeleteSupplyCacheProp();
+            RemoveLootPrompt();
+            RemoveObjectivePrompt();
             _story.OnMissionReturning(_faction.MissionType, message);
             _objectiveController.CleanupConvoy();
             _faction.MissionStage = 2;
@@ -1085,7 +1268,6 @@ namespace EnRAGEPlayerFactionExtension
             SaveFaction();
             RemoveTargetBlip();
             EnsureTargetBlip();
-            // The return explanation is queued as a subtitle dialogue by MissionStoryDirector.
         }
 
         private void CompleteMission()
@@ -1102,9 +1284,11 @@ namespace EnRAGEPlayerFactionExtension
             }
 
             string completedName = GetMissionTitle(_faction.MissionType);
-            if (_faction.MissionType == MissionSupplyCache)
+            MissionDefinition completedDefinition = MissionCatalog.Get(_faction.MissionType);
+            if (completedDefinition.ObjectiveType == MissionObjectiveType.RecoverSupplies)
                 DeleteSupplyCacheProp();
-            if (_faction.MissionType == MissionConvoy)
+            if (completedDefinition.ObjectiveType == MissionObjectiveType.InterceptConvoy ||
+                completedDefinition.ObjectiveType == MissionObjectiveType.DeliverDispatch)
                 _objectiveController.CleanupConvoy();
             _faction.LastMissionType = _faction.MissionType;
             _faction.MissionPrestige = Math.Min(100, _faction.MissionPrestige + prestigeReward);
