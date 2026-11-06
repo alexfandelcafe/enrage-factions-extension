@@ -20,7 +20,6 @@ namespace EnRAGEPlayerFactionExtension
         private const string CombatMusicStop = "DUEL_GENERAL_STOP";
         private const string CombatMusicEndStinger = "DUEL_GENERAL_END_OS";
 
-        private readonly Action<string> _notify;
         private readonly Queue<string> _dialogue = new Queue<string>();
         private int _nextDialogueAt;
         private int _dialogueGapMs = 2600;
@@ -28,12 +27,9 @@ namespace EnRAGEPlayerFactionExtension
         private bool _combatMusicRequested;
         private int _nextMusicRetryAt;
         private string _activeMusicStopEvent = CombatMusicStop;
-        private int _nextInteractionHintAt;
-        private int _nextHintFallbackAt;
 
-        internal MissionStoryDirector(Action<string> notify)
+        internal MissionStoryDirector()
         {
-            _notify = notify;
         }
 
         internal void Tick()
@@ -57,19 +53,23 @@ namespace EnRAGEPlayerFactionExtension
         {
             PlayFrontendCue("SELECT");
             FaceEachOther(missionGiver, player);
-            QueueDialogue(GetOpeningLines(missionType, difficulty));
+            MissionDefinition definition = MissionCatalog.Get(missionType);
+            QueueDialogue(definition.Briefing != null && definition.Briefing.Count > 0
+                ? definition.Briefing.ToArray()
+                : GetOpeningLines(definition, difficulty));
         }
 
         internal void OnCheckpoint(int missionType, int objectiveIndex)
         {
             PlayFrontendCue("NAV_UP_DOWN");
-            QueueDialogue(GetCheckpointLines(missionType, objectiveIndex));
+            QueueDialogue(GetCheckpointLines(MissionCatalog.Get(missionType), objectiveIndex));
         }
 
         internal void OnLootAvailable(int missionType)
         {
             PlayFrontendCue("SELECT");
-            if (missionType == 5)
+            MissionDefinition definition = MissionCatalog.Get(missionType);
+            if (definition.ObjectiveType == MissionObjectiveType.InterceptConvoy)
                 QueueDialogue(new[] { "ENCARGADO: La carreta está despejada. Registra el cargamento y trae lo que se pueda salvar." }, true);
             else
                 QueueDialogue(new[] { "ENCARGADO: La zona está despejada. Recupera las provisiones y vuelve sin dejar rastro." }, true);
@@ -78,9 +78,12 @@ namespace EnRAGEPlayerFactionExtension
         internal void OnEncounterStarted(int missionType)
         {
             PlayFrontendCue("NAV_UP_DOWN");
-            if (missionType == 2 || missionType == 3 || missionType == 5)
+            MissionDefinition definition = MissionCatalog.Get(missionType);
+            if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies ||
+                definition.ObjectiveType == MissionObjectiveType.HoldArea ||
+                definition.ObjectiveType == MissionObjectiveType.InterceptConvoy)
                 StartCombatMusic();
-            QueueDialogue(GetEncounterLines(missionType));
+            QueueDialogue(GetEncounterLines(definition));
         }
 
         internal void OnCourierConversation(Ped courier, Ped player, bool finalExchange)
@@ -124,27 +127,6 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        internal void ShowInteractionHint(string message, int displayMs = 2200)
-        {
-            if (string.IsNullOrWhiteSpace(message) || Game.GameTime < _nextInteractionHintAt) return;
-            _nextInteractionHintAt = Game.GameTime + 1700;
-            string text = "Pulsa [G] " + message;
-
-            try
-            {
-                if (TryDisplaySubtitle(text, Math.Max(1200, displayMs))) return;
-            }
-            catch (Exception ex)
-            {
-                Log.Write("Mission interaction hint display warning: " + ex.Message);
-            }
-
-            if (Game.GameTime < _nextHintFallbackAt) return;
-            _nextHintFallbackAt = Game.GameTime + 5500;
-            try { _notify(text); }
-            catch (Exception ex) { Log.Write("Mission interaction hint fallback warning: " + ex.Message); }
-        }
-
         internal void OnMissionReturning(int missionType, string outcomeMessage)
         {
             StopCombatMusic(true);
@@ -160,7 +142,12 @@ namespace EnRAGEPlayerFactionExtension
             PlayFrontendCue("SELECT");
             if (!string.IsNullOrWhiteSpace(completionSummary))
                 QueueDialogue(new[] { "ENCARGADO: " + completionSummary }, true);
-            QueueDialogue(new[] { "ENCARGADO: Buen trabajo. La banda recordará que has cumplido." }, true);
+
+            MissionDefinition definition = MissionCatalog.Get(missionType);
+            string completionLine = string.IsNullOrWhiteSpace(definition.CompletionLine)
+                ? "Buen trabajo. La banda recordará que has cumplido."
+                : "ENCARGADO: " + definition.CompletionLine;
+            QueueDialogue(new[] { completionLine }, true);
         }
 
         internal void OnScriptAborted()
@@ -182,40 +169,40 @@ namespace EnRAGEPlayerFactionExtension
             _dialogueGapMs = 2600;
         }
 
-        private static string[] GetOpeningLines(int missionType, int difficulty)
+        private static string[] GetOpeningLines(MissionDefinition definition, int difficulty)
         {
             string qualifier = difficulty >= 2 ? "No habrá margen para errores." :
                 (difficulty == 1 ? "Mantén los ojos abiertos." : "No te precipites.");
-            switch (missionType)
+            switch (definition.ObjectiveType)
             {
-                case 1:
+                case MissionObjectiveType.PatrolRoute:
                     return new[] {
-                        "ENCARGADO: Han visto gente extraña cerca de nuestros caminos. Revisa la frontera y no pierdas de vista las salidas.",
-                        "ENCARGADO: Sigue los puntos en orden. Si encuentras señales de una banda, memoriza por dónde se mueve.",
+                        "ENCARGADO: Han visto gente extraña cerca de nuestros caminos. Revisa la frontera y vigila las salidas.",
+                        "ENCARGADO: Sigue los puntos en orden y memoriza por dónde se mueven.",
                         "ENCARGADO: " + qualifier
                     };
-                case 2:
+                case MissionObjectiveType.RecoverSupplies:
                     return new[] {
-                        "ENCARGADO: Un alijo nuestro quedó atrás y alguien lo está vigilando. Recupera las provisiones, pero no te acerques sin mirar.",
-                        "ENCARGADO: No basta con encontrar las cajas. Asegúrate de que nadie pueda seguirte hasta el campamento.",
+                        "ENCARGADO: Un alijo nuestro quedó atrás y puede que alguien lo haya encontrado.",
+                        "ENCARGADO: Comprueba quién lo vigila antes de acercarte a las provisiones.",
                         "ENCARGADO: " + qualifier
                     };
-                case 3:
+                case MissionObjectiveType.HoldArea:
                     return new[] {
-                        "ENCARGADO: Necesito que vigiles el cruce. Quédate en posición y averigua quién utiliza el camino.",
-                        "ENCARGADO: Si te descubren, no abandones el terreno sin resolver la amenaza.",
+                        "ENCARGADO: Vigila el punto marcado y observa quién utiliza el camino.",
+                        "ENCARGADO: El reloj se detiene si abandonas el perímetro; puede aparecer una partida.",
                         "ENCARGADO: " + qualifier
                     };
-                case 4:
+                case MissionObjectiveType.DeliverDispatch:
                     return new[] {
-                        "ENCARGADO: Lleva este despacho al contacto. No lo abras y no se lo entregues al primero que pregunte.",
-                        "ENCARGADO: Escucha lo que te diga. Una ruta segura vale más que un pago rápido.",
+                        "ENCARGADO: Lleva el despacho al contacto y no se lo entregues al primero que pregunte.",
+                        "ENCARGADO: Escucha lo que tenga que decir y confirma la ruta antes de soltar el paquete.",
                         "ENCARGADO: " + qualifier
                     };
-                case 5:
+                case MissionObjectiveType.InterceptConvoy:
                     return new[] {
-                        "ENCARGADO: Un convoy lleva suministros que necesitamos. Localízalo y despeja la ruta antes de acercarte a la carga.",
-                        "ENCARGADO: Si la carreta termina destruida, recoge lo que puedas de la zona y no te quedes allí.",
+                        "ENCARGADO: Un convoy lleva suministros que necesitamos. Localízalo y despeja la ruta.",
+                        "ENCARGADO: Busca cobertura y controla a los escoltas antes de tocar la carga.",
                         "ENCARGADO: " + qualifier
                     };
                 default:
@@ -227,47 +214,67 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        private static string[] GetCheckpointLines(int missionType, int objectiveIndex)
+        private static string[] GetCheckpointLines(MissionDefinition definition, int objectiveIndex)
         {
-            switch (missionType)
+            if (definition.CheckpointLines != null && definition.CheckpointLines.Count > 0)
             {
-                case 0:
-                    return objectiveIndex <= 1
-                        ? new[] { "NOTA DE CAMPO: Has encontrado señales recientes. Comprueba el segundo punto antes de sacar conclusiones." }
-                        : new[] { "NOTA DE CAMPO: La ruta está revisada. Ya puedes volver con información útil." };
-                case 1:
+                int selected = objectiveIndex <= 0 ? 0 : objectiveIndex - 1;
+                selected = Math.Min(selected, definition.CheckpointLines.Count - 1);
+                return new[] { definition.CheckpointLines[selected] };
+            }
+
+            switch (definition.ObjectiveType)
+            {
+                case MissionObjectiveType.ReachLocation:
+                    return new[] { "NOTA DE CAMPO: Has encontrado señales recientes. Comprueba el siguiente punto antes de sacar conclusiones." };
+                case MissionObjectiveType.PatrolRoute:
                     return new[] { "PATRULLA: Punto registrado. No abandones el recorrido; falta terreno por cubrir." };
-                case 2:
-                    return new[] { "ALIJO: Has localizado el escondite. Antes de tocar las provisiones, comprueba quién las está vigilando." };
-                case 3:
+                case MissionObjectiveType.RecoverSupplies:
+                    return new[] { "ALIJO: Has localizado el escondite. Comprueba quién lo vigila." };
+                case MissionObjectiveType.HoldArea:
                     return new[] { "VIGILANCIA: Mantén la posición. El movimiento en el camino podría no ser casual." };
-                case 4:
-                    return new[] { "DESPACHO: El punto de encuentro está cerca. Confirma la identidad del contacto antes de entregar nada." };
+                case MissionObjectiveType.DeliverDispatch:
+                    return new[] { "DESPACHO: El punto de encuentro está cerca. Confirma la identidad del contacto." };
                 default:
                     return new[] { "CONVOY: Has llegado a la zona. Observa a los escoltas y busca el momento para acercarte." };
             }
         }
 
-        private static string[] GetEncounterLines(int missionType)
+        private static string[] GetEncounterLines(MissionDefinition definition)
         {
-            switch (missionType)
+            if (definition.EncounterLines != null && definition.EncounterLines.Count > 0)
+                return definition.EncounterLines.ToArray();
+
+            switch (definition.ObjectiveType)
             {
-                case 2: return new[] { "ALIJO: Te han descubierto. Despeja la zona antes de recoger las provisiones." };
-                case 3: return new[] { "VIGILANCIA: ¡Una partida se aproxima al cruce! Aguanta la posición y neutraliza a los atacantes." };
-                default: return new[] { "CONVOY: Los escoltas están alerta. Busca cobertura y neutraliza la amenaza antes de registrar la carga." };
+                case MissionObjectiveType.RecoverSupplies:
+                    return new[] { "ALIJO: Te han descubierto. Despeja la zona antes de recoger las provisiones." };
+                case MissionObjectiveType.HoldArea:
+                    return new[] { "VIGILANCIA: ¡Una partida se aproxima al punto! Neutraliza a los atacantes y asegura la zona." };
+                default:
+                    return new[] { "CONVOY: Los escoltas están alerta. Busca cobertura y neutraliza la amenaza antes de registrar la carga." };
             }
         }
 
-        private static string[] GetReturnLines(int missionType)
+        private static string[] GetReturnLines(MissionDefinition definition)
         {
-            switch (missionType)
+            if (definition.ReturnLines != null && definition.ReturnLines.Count > 0)
+                return definition.ReturnLines.ToArray();
+
+            switch (definition.ObjectiveType)
             {
-                case 0: return new[] { "ENCARGADO: Dos puntos revisados. Con eso podremos planear la siguiente salida." };
-                case 1: return new[] { "ENCARGADO: La patrulla ha cubierto la ruta. Volvamos a organizar a la banda." };
-                case 2: return new[] { "ENCARGADO: Las provisiones valen poco si llevas enemigos hasta el campamento. Bien hecho al despejar la zona." };
-                case 3: return new[] { "ENCARGADO: Ya sabemos quién ronda el cruce. Regresa y contaremos lo que has visto." };
-                case 4: return new[] { "ENCARGADO: Un despacho entregado sin levantar sospechas. Regresa con las manos libres." };
-                default: return new[] { "ENCARGADO: El convoy ha quedado neutralizado. Trae el informe y deja que la banda se ocupe del resto." };
+                case MissionObjectiveType.ReachLocation:
+                    return new[] { "ENCARGADO: El reconocimiento está hecho. Volvamos a planear la siguiente salida." };
+                case MissionObjectiveType.PatrolRoute:
+                    return new[] { "ENCARGADO: La patrulla ha cubierto la ruta. Volvamos a organizar a la banda." };
+                case MissionObjectiveType.RecoverSupplies:
+                    return new[] { "ENCARGADO: Las provisiones valen poco si llevas enemigos hasta el campamento. Bien hecho." };
+                case MissionObjectiveType.HoldArea:
+                    return new[] { "ENCARGADO: Ya sabemos quién ronda el cruce. Regresa y contaremos lo que has visto." };
+                case MissionObjectiveType.DeliverDispatch:
+                    return new[] { "ENCARGADO: Un despacho entregado sin levantar sospechas. Regresa con las manos libres." };
+                default:
+                    return new[] { "ENCARGADO: El convoy ha quedado neutralizado. Trae el informe y deja que la banda se ocupe del resto." };
             }
         }
 
@@ -372,7 +379,7 @@ namespace EnRAGEPlayerFactionExtension
             }
             catch (Exception ex)
             {
-                Log.Write("Native subtitle display unavailable; falling back to notification: " + ex.Message);
+                Log.Write("Native subtitle display unavailable; dialogue was not shown: " + ex.Message);
             }
             return false;
         }
