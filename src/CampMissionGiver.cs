@@ -66,7 +66,7 @@ namespace EnRAGEPlayerFactionExtension
             _bridge = bridge;
             _faction = faction;
             _objectiveController = new MissionObjectiveController(faction);
-            _story = new MissionStoryDirector();
+            _story = new MissionStoryDirector(_faction);
         }
 
         internal void Maintain(Ped player, bool interactionBlocked)
@@ -96,7 +96,7 @@ namespace EnRAGEPlayerFactionExtension
                 campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (campCentre == Vector3.Zero) return;
 
-            MissionObjectiveType activeObjectiveType = MissionCatalog.Get(_faction.MissionType).ObjectiveType;
+            MissionObjectiveType activeObjectiveType = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex).ObjectiveType;
             bool courierNeedsFallbackDrop = activeObjectiveType == MissionObjectiveType.DeliverDispatch &&
                 _objectiveController.CourierSpawnFailed;
             if (_faction.MissionStage == 1 &&
@@ -123,7 +123,7 @@ namespace EnRAGEPlayerFactionExtension
 
             UpdateMissionProgress(player, campCentre);
             if (_faction.MissionStage != 1 ||
-                MissionCatalog.Get(_faction.MissionType).ObjectiveType != MissionObjectiveType.InterceptConvoy)
+                MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex).ObjectiveType != MissionObjectiveType.InterceptConvoy)
                 RemoveLootPrompt();
             if (_faction.MissionStage != 1)
                 RemoveObjectivePrompt();
@@ -420,7 +420,7 @@ namespace EnRAGEPlayerFactionExtension
         private void MaintainConvoyLootPrompt(Ped player)
         {
             _lootPromptJustCompleted = false;
-            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+            MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
             bool missionReady = _faction.MissionStage == 1 &&
                 definition.ObjectiveType == MissionObjectiveType.InterceptConvoy &&
                 _faction.MissionObjectiveReady &&
@@ -502,7 +502,7 @@ namespace EnRAGEPlayerFactionExtension
                     ? Enum.ToObject(controlType, ContextControl)
                     : (object)ContextControl;
 
-                string promptLabel = MissionCatalog.Get(_faction.MissionType).PromptLabel;
+                string promptLabel = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex).PromptLabel;
                 if (string.IsNullOrWhiteSpace(promptLabel)) promptLabel = "Saquear cargamento";
                 _lootPrompt = Convert.ToInt32(make.Invoke(null,
                     new object[] { control, promptLabel, true, group }));
@@ -539,7 +539,7 @@ namespace EnRAGEPlayerFactionExtension
                 ulong label = Convert.ToUInt64(forever.Invoke(null, new object[] { "Cargamento del convoy" }));
                 Function.Call(SetAmbientPromptGroupThisFrameHash, new InputArgument[]
                 {
-                    entityHandle, MissionCatalog.Get(_faction.MissionType).InteractionRadius,
+                    entityHandle, MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex).InteractionRadius,
                     2, 0, group, new InputArgument(label), 0
                 });
             }
@@ -592,7 +592,7 @@ namespace EnRAGEPlayerFactionExtension
             _objectivePromptJustCompleted = false;
             int entityHandle = 0;
             string promptLabel = string.Empty;
-            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+            MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
 
             if (_faction.MissionStage == 1 && _faction.MissionObjectiveReady &&
                 player != null && player.Exists() && !player.IsDead &&
@@ -775,7 +775,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (_faction.MissionStage > 0)
             {
-                MissionDefinition active = MissionCatalog.Get(_faction.MissionType);
+                MissionDefinition active = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
                 string status;
                 if (_faction.MissionStage == 2)
                     status = "Vuelve al campamento para entregar el encargo.";
@@ -821,6 +821,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionConvoyEnemyHandles.Clear();
             _faction.MissionEncounterSpawned = false;
             _faction.MissionEncounterProcessId = 0;
+            _faction.MissionStepIndex = 0;
             _faction.MissionObjectiveIndex = 0;
             _faction.MissionObjectiveReady = false;
             _faction.MissionWaitProgressMs = 0;
@@ -836,40 +837,52 @@ namespace EnRAGEPlayerFactionExtension
             _story.BeginMission(_faction.MissionType, _faction.MissionDifficulty, _ped, Game.Player.Character);
         }
 
-        private unsafe void SetMissionTarget(Vector3 centre, int pointIndex)
+        private unsafe void SetMissionTarget(Vector3 campCentre, int pointIndex)
         {
-            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+            MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
+            Vector3 origin = campCentre;
+            if (definition.UseFixedTarget)
+                origin = new Vector3(definition.TargetX, definition.TargetY, definition.TargetZ);
+
             double baseAngle = (_faction.MissionsCompleted + 1) * 2.399963229728653 +
-                _faction.MissionType * 0.731;
+                _faction.MissionType * 0.731 + _faction.MissionStepIndex * 0.917;
             double angle = baseAngle;
-            if (definition.ObjectiveType == MissionObjectiveType.PatrolRoute ||
-                (definition.ObjectiveType == MissionObjectiveType.ReachLocation && definition.WaypointCount > 1))
+            bool multiplePoints = definition.ObjectiveType == MissionObjectiveType.PatrolRoute ||
+                definition.ObjectiveType == MissionObjectiveType.InvestigateArea ||
+                (definition.ObjectiveType == MissionObjectiveType.ReachLocation && definition.WaypointCount > 1);
+            if (multiplePoints)
                 angle += pointIndex * (Math.PI * 2.0 / definition.WaypointCount);
 
-            float radius = definition.TargetDistance;
-            radius += ((_faction.MissionsCompleted + pointIndex) % 3) * 18f;
-            radius += Math.Max(0, Math.Min(2, _faction.MissionDifficulty)) * 22f;
+            float radius = definition.UseFixedTarget
+                ? definition.WaypointSpacing * Math.Max(1, pointIndex)
+                : definition.TargetDistance + ((_faction.MissionsCompleted + pointIndex + _faction.MissionStepIndex) % 3) * 18f +
+                    Math.Max(0, Math.Min(2, _faction.MissionDifficulty)) * 22f;
 
-            Vector3 target = new Vector3(
-                centre.X + (float)Math.Cos(angle) * radius,
-                centre.Y + (float)Math.Sin(angle) * radius,
-                centre.Z + 0.35f);
+            Vector3 target;
+            if (definition.UseFixedTarget && pointIndex == 0)
+                target = origin;
+            else
+                target = new Vector3(
+                    origin.X + (float)Math.Cos(angle) * radius,
+                    origin.Y + (float)Math.Sin(angle) * radius,
+                    origin.Z + 0.35f);
 
             bool foundGround = false;
             for (int attempt = 0; attempt < 8; attempt++)
             {
                 double candidateAngle = angle + attempt * (Math.PI / 4.0);
-                float candidateRadius = radius + (attempt % 3) * 14f;
-                Vector3 candidate = new Vector3(
-                    centre.X + (float)Math.Cos(candidateAngle) * candidateRadius,
-                    centre.Y + (float)Math.Sin(candidateAngle) * candidateRadius,
-                    centre.Z + 0.35f);
+                float candidateRadius = (definition.UseFixedTarget && pointIndex == 0)
+                    ? 0f : radius + (attempt % 3) * 14f;
+                Vector3 candidate = candidateRadius == 0f
+                    ? target
+                    : new Vector3(origin.X + (float)Math.Cos(candidateAngle) * candidateRadius,
+                        origin.Y + (float)Math.Sin(candidateAngle) * candidateRadius, origin.Z + 0.35f);
                 STREAMING.REQUEST_COLLISION_AT_COORD(candidate.X, candidate.Y, candidate.Z);
                 float groundZ = 0f;
                 try
                 {
-                    if (MISC.GET_GROUND_Z_FOR_3D_COORD(candidate.X, candidate.Y, centre.Z + 50f, &groundZ, false) &&
-                        Math.Abs(groundZ - centre.Z) <= 55f)
+                    if (MISC.GET_GROUND_Z_FOR_3D_COORD(candidate.X, candidate.Y, origin.Z + 50f, &groundZ, false) &&
+                        Math.Abs(groundZ - origin.Z) <= 80f)
                     {
                         candidate.Z = groundZ + 0.25f;
                         target = candidate;
@@ -878,6 +891,7 @@ namespace EnRAGEPlayerFactionExtension
                     }
                 }
                 catch { }
+                if (definition.UseFixedTarget && pointIndex == 0) break;
             }
             if (!foundGround)
                 STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
@@ -895,18 +909,10 @@ namespace EnRAGEPlayerFactionExtension
         private static string GetMissionObjectiveBlipName(PlayerFactionData faction)
         {
             if (faction == null) return "Objetivo de misión";
-            MissionDefinition definition = MissionCatalog.Get(faction.MissionType);
-            if (definition.ObjectiveType == MissionObjectiveType.PatrolRoute)
-                return "Patrulla: punto " + (faction.MissionObjectiveIndex + 1) + "/" + definition.WaypointCount;
-            if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies)
-                return "Alijo de provisiones";
-            if (definition.ObjectiveType == MissionObjectiveType.HoldArea)
-                return "Cruce de vigilancia";
-            if (definition.ObjectiveType == MissionObjectiveType.DeliverDispatch)
-                return "Punto de entrega";
-            if (definition.ObjectiveType == MissionObjectiveType.InterceptConvoy)
-                return "Convoy enemigo";
-            if (definition.WaypointCount > 1)
+            MissionDefinition definition = MissionCatalog.GetStep(faction.MissionType, faction.MissionStepIndex);
+            if (definition.ObjectiveType == MissionObjectiveType.PatrolRoute ||
+                definition.ObjectiveType == MissionObjectiveType.InvestigateArea ||
+                (definition.ObjectiveType == MissionObjectiveType.ReachLocation && definition.WaypointCount > 1))
                 return definition.Title + ": punto " + (faction.MissionObjectiveIndex + 1) + "/" + definition.WaypointCount;
             return definition.Title;
         }
@@ -1028,7 +1034,7 @@ namespace EnRAGEPlayerFactionExtension
 
             if (_faction.MissionStage == 1)
             {
-                MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+                MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
                 MissionObjectiveType objectiveType = definition.ObjectiveType;
                 Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
                 float distance = player.Position.DistanceTo(target);
@@ -1282,7 +1288,7 @@ namespace EnRAGEPlayerFactionExtension
 
         private void AdvanceMissionToReturn(string message)
         {
-            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+            MissionDefinition definition = MissionCatalog.GetStep(_faction.MissionType, _faction.MissionStepIndex);
             if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies ||
                 (definition.ObjectiveType == MissionObjectiveType.DeliverDispatch && _faction.MissionCachePropHandle != 0))
                 DeleteSupplyCacheProp();
