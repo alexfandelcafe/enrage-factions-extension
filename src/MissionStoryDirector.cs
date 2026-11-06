@@ -69,6 +69,12 @@ namespace EnRAGEPlayerFactionExtension
         {
             PlayFrontendCue("SELECT");
             MissionDefinition definition = MissionCatalog.Get(missionType);
+            if (definition.LootLines != null && definition.LootLines.Count > 0)
+            {
+                QueueDialogue(definition.LootLines, true);
+                return;
+            }
+
             if (definition.ObjectiveType == MissionObjectiveType.InterceptConvoy)
                 QueueDialogue(new[] { "ENCARGADO: La carreta está despejada. Registra el cargamento y trae lo que se pueda salvar." }, true);
             else
@@ -86,17 +92,25 @@ namespace EnRAGEPlayerFactionExtension
             QueueDialogue(GetEncounterLines(definition));
         }
 
-        internal void OnCourierConversation(Ped courier, Ped player, bool finalExchange)
+        internal void OnCourierConversation(int missionType, Ped courier, Ped player, bool finalExchange)
         {
             FaceEachOther(courier, player);
             PlayFrontendCue("SELECT");
+            MissionDefinition definition = MissionCatalog.Get(missionType);
+            List<string> customLines = finalExchange ? definition.HandoverLines : definition.ContactLines;
+            if (customLines != null && customLines.Count > 0)
+            {
+                QueueDialogue(customLines, true);
+                return;
+            }
+
             QueueDialogue(finalExchange
                 ? new[] { "CONTACTO: Bien. Que nadie sepa que nos hemos visto. Lleva el resto de vuelta a tu gente." }
                 : new[]
                 {
                     "CONTACTO: Creía que mandarían a otro. ¿Traes el despacho?",
                     "Tú: Primero dime si la ruta sigue limpia. No pienso llevar a mi banda a una trampa."
-                });
+                }, true);
         }
 
         internal void OnObjectiveInteraction(Ped player, string context)
