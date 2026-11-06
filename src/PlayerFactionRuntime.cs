@@ -196,9 +196,9 @@ namespace EnRAGEPlayerFactionExtension
 
         internal PlayerFactionRuntime()
         {
+            MissionCatalog.Initialize();
             _config = ExtensionConfig.Load();
             _faction = PlayerFactionData.Load();
-            MissionCatalog.Initialize();
 
             // Ped handles survive a ScriptHook script reload in the same game process, but
             // must never be trusted after a complete game restart (RDR2 can reuse old handles).
