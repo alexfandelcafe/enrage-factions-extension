@@ -206,20 +206,22 @@ Las teclas efectivas dependen de la configuración de controles del juego y de C
 
 ### Encargado de misiones independientes
 
-Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. El prompt **Pedir una misión** asigna uno de seis contratos. La selección es ponderada, evita repetir el último contrato completado y aumenta la dificultad cada cierto número de misiones.
+Cuando la facción tiene un campamento nativo válido, aparece un NPC nuevo cerca del administrador. El prompt **Pedir una misión** asigna un contrato leído desde `scripts/EnRAGEPlayerFactionExtension/Missions/`. El catálogo inicial incluye seis contratos editables; puedes añadir más archivos JSON. La selección es ponderada, evita repetir el último contrato completado y aumenta la dificultad cada cierto número de misiones.
 
 | Encargo | Objetivo | Recompensa base |
 |---|---|---|
-| **Reconocimiento de ruta** | Visitar el punto marcado y regresar al campamento. | +5 prestigio, +5 suministros y $25. |
-| **Patrulla de frontera** | Recorrer tres puntos de control en orden y regresar. | +8 prestigio, +8 suministros y $35. |
+| **Reconocimiento de ruta** | Inspeccionar dos puntos diferentes y regresar al campamento. | +5 prestigio, +5 suministros y $25. |
+| **Patrulla de frontera** | Recorrer los puntos configurados en orden y regresar. | +8 prestigio, +8 suministros y $35. |
 | **Recuperar provisiones** | Encontrar el alijo físico, recogerlo y regresar. | +9 prestigio, +12 suministros y $20. |
 | **Vigilar el cruce** | Permanecer dentro de la zona durante 18 segundos y regresar. | +7 prestigio, +6 suministros y $30. |
-| **Entregar el despacho** | Llegar al contacto fuera de escena, confirmar la entrega y regresar. | +8 prestigio, +5 suministros y $45. |
+| **Entregar el despacho** | Localizar al contacto físico, hablar con él, entregar el despacho y regresar. | +8 prestigio, +5 suministros y $45. |
 | **Interceptar un convoy** | Enfrentarse a 2–4 escoltas armados, saquear la carreta y regresar. | +10 prestigio, +12 suministros y $60. |
 
 La dificultad tiene tres niveles (**baja, media y alta**) y multiplica las recompensas base en un 30 % por nivel. En el asalto al convoy se genera una carreta con escoltas hostiles cerca del objetivo; el número de enemigos, su precisión y la munición aumentan con la dificultad. La escena solo se crea cerca del jugador, y los handles guardados se validan por modelo y posición antes de reutilizarse o limpiarse.
 
-El alijo de provisiones sigue apareciendo como un cajón físico; el despacho representa un contacto fuera de escena y se confirma con la tecla contextual. En el convoy, el saqueo se registra al interactuar junto a la carreta una vez derrotados los escoltas.\n\nEl catálogo de contratos, el controlador de entidades del objetivo y el encargado del campamento están separados en clases propias. Los objetivos usan el sprite **blip_objective**, en lugar de un icono de punto de interés. El progreso y la dificultad activa se guardan en PlayerFaction.json; el sistema sigue usando marcadores propios y no consume eventos de WorldEvent ni EncounterKind de enRAGE.
+El alijo y la carreta usan prompts contextuales asociados a sus entidades, y el contacto tiene prompts distintos para conversar y entregar el paquete. No se muestra un texto que sustituya a la interacción. Los marcadores usan el sprite **blip_objective**; el progreso del contrato y la dificultad activa se guardan en `PlayerFaction.json`. El sistema utiliza marcadores propios y no consume eventos de `WorldEvent` ni `EncounterKind` de enRAGE.
+
+Los parámetros, recompensas y diálogos por fase se editan en los archivos JSON del catálogo. Los tipos de objetivo disponibles son `ReachLocation`, `PatrolRoute`, `RecoverSupplies`, `HoldArea`, `DeliverDispatch` e `InterceptConvoy`.
 
 ### Aislamiento de la facción del jugador
 
