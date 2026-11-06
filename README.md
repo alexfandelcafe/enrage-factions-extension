@@ -1,27 +1,49 @@
-# EnRAGE Player Faction Extension — v0.5.0
+# EnRAGE Player Faction Extension — v0.6.0
 
-Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
+Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. Esta versión reorganiza las misiones como definiciones JSON editables, unifica las interacciones con prompts contextuales nativos y conserva el sistema de facción, roster, campamentos, territorio y recursos de enRAGE.
 
-> Esta guía describe el comportamiento actual del código de `main`, incluidas las correcciones posteriores a la primera documentación de v0.3.6.
+> Esta guía describe la rama `feature/camp-mission-giver` (v0.6.0). No implica que estos cambios estén fusionados en `main`.
 
-## Misiones narrativas y encuentros (v0.5.0)
+## Rework de misiones (v0.6.0)
 
-Los contratos comparten ahora un controlador de narrativa, interacción y encuentros:
+Las seis misiones iniciales ahora comparten el catálogo editable, el sistema de objetivos, los encuentros y el director narrativo:
 
-- **Reconocimiento:** requiere inspeccionar dos puntos diferentes para reconstruir el rastro antes de regresar.
-- **Patrulla:** mantiene tres puntos secuenciales con avisos de progreso.
-- **Provisiones:** el alijo puede estar vigilado; hay que despejar la zona antes de recogerlo. Si el encuentro no puede generarse tras varios intentos, el contrato conserva una salida alternativa.
-- **Vigilancia (rework):** el contador avanza dentro de un perímetro de 35 m, se pausa al salir y tolera pausas breves del script. Muestra el tiempo restante y, si aparece una emboscada, exige despejar la zona antes de volver. Si el encuentro no se puede crear, el contrato sigue siendo completable.
-- **Despacho:** genera un contacto físico en el punto de encuentro cuando el modelo está disponible y convierte la entrega en una conversación de varias interacciones; hay una alternativa si el NPC no aparece.
-- **Convoy:** mantiene escoltas, saqueo contextual y finalización alternativa si la carreta es destruida o no está disponible.
-- **Narrativa y sonido:** hay líneas de diálogo contextual en subtítulos o notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con limpieza al resolver el encuentro.
-- **Interacciones v0.4.2:** la carreta del convoy usa un prompt ambiental nativo “Saquear cargamento” asociado a la entidad, en lugar de detectar G sin indicar la acción. Los resúmenes iniciales y de transición ya no se envían como avisos enRAGE cuando también hay diálogo por subtítulos. Los eventos de música se preparan antes de activarse y se reintentan si el motor no los acepta en el primer intento.
+- **Reconocimiento:** recorre varios puntos y vuelve con información.
+- **Patrulla:** visita una ruta de puntos secuenciales.
+- **Provisiones:** encuentra el alijo, despeja la zona si aparecen guardias y recoge el contenido con un prompt nativo.
+- **Vigilancia:** el contador usa el tiempo transcurrido real mientras permaneces en el perímetro, se pausa al salir y permite configurar duración y emboscada.
+- **Despacho:** habla con un contacto y completa la entrega utilizando prompts nativos separados para hablar y entregar.
+- **Convoy:** elimina a los escoltas y saquea la carreta con su prompt contextual; existe una vía de finalización alternativa cuando la carga no está disponible.
 
-Los textos son diálogo contextual escrito por la extensión; no son doblaje original ni nuevas voces grabadas. La música y el comportamiento visual de los subtítulos deben probarse en RDR2. Este entorno permite revisar el código, pero no ejecutar una sesión de juego real.
+Las interacciones en el encargado de misiones, el alijo, el contacto y la carreta ya no dependen de mostrar un texto que ordene pulsar G. El texto de la acción aparece en el prompt contextual de la entidad correspondiente. Los diálogos, textos por fase, recompensas, frecuencia de selección, radio, distancia objetivo y parámetros de la vigilancia se definen en JSON.
+
+## Misiones editables
+
+La extensión crea esta carpeta en el directorio de datos de ScriptHook:
+
+```text
+Red Dead Redemption 2/scripts/EnRAGEPlayerFactionExtension/Missions/
+├── defaults.json
+├── my-contract.json
+└── ...
+```
+
+Al primer inicio, la extensión copia allí los seis contratos predeterminados solo si `defaults.json` no existe. Puedes editar ese archivo o añadir cualquier cantidad práctica de archivos `.json` adicionales. Cada misión necesita un `id` único y un `objectiveType` compatible. Si una misión personalizada usa un ID ya incluido, puede reemplazar la definición inicial con sus propios diálogos, parámetros y recompensas.
+
+Los tipos de objetivo incorporados son `ReachLocation`, `PatrolRoute`, `RecoverSupplies`, `HoldArea`, `DeliverDispatch` e `InterceptConvoy`. Los archivos JSON permiten personalizar esos comportamientos; para inventar una mecánica enteramente nueva hace falta implementar un tipo de objetivo nuevo en C#.
+
+El catálogo se vuelve a leer al solicitar el siguiente contrato cuando no hay una misión activa. En general, no hace falta recompilar la DLL para cambiar las misiones. La guía completa y un ejemplo están en [Missions/README.md](Missions/README.md).
+
+## Calidad y progresión
+
+Los contratos incluyen briefings y diálogos por fase, puntos secuenciales, encuentros hostiles opcionales o configurables donde el tipo de objetivo lo admite, recompensas ajustadas por dificultad y un flujo de vuelta al campamento. La misión de vigilancia actualiza y guarda el progreso con el contador del juego, en lugar de descartar tiempo por pequeños retrasos de ejecución.
+
+La música de combate y los subtítulos siguen dependiendo de los recursos y de la API de ScriptHook de la instalación de RDR2. Los cambios de código se pueden revisar en esta rama, pero deben compilarse y probarse dentro del juego para confirmar el comportamiento real.
 
 ## Índice
 
 - [Resumen del funcionamiento](#resumen-del-funcionamiento)
+- [Misiones editables](#misiones-editables)
 - [Fundar la banda](#fundar-la-banda)
 - [Líder, roster y rangos](#líder-roster-y-rangos)
 - [Integración con Companion y controles](#integración-con-companion-y-controles)
@@ -457,6 +479,7 @@ Ante un problema:
 
 ## Historial resumido
 
+- **v0.6.0:** catálogo de misiones JSON extensible, prompts contextuales en alijo/contacto/convoy, diálogos editables y progreso de vigilancia basado en tiempo transcurrido.
 - **v0.3.6:** aspecto del campamento por prestigio en cinco etapas; vida de campamento con escenarios y conversaciones ambientales; defensa reactiva; sincronización de roster y recursos; prevención de falsos campamentos enemigos.
 - **v0.3.5:** recuperación de registros Companion, materialización de miembros faltantes por ID persistente, línea base de fuerza inicial y ajustes nativos de facción.
 - **v0.3.4:** recuperación tras recargar scripts, barra PRESTIGIO, acciones de ascenso/degradación y relación «HACIA TI» por rango.
