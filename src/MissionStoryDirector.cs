@@ -133,7 +133,7 @@ namespace EnRAGEPlayerFactionExtension
             PlayFrontendCue("SELECT");
             if (!string.IsNullOrWhiteSpace(outcomeMessage))
                 QueueDialogue(new[] { "ENCARGADO: " + outcomeMessage }, true);
-            QueueDialogue(GetReturnLines(missionType), true);
+            QueueDialogue(GetReturnLines(MissionCatalog.Get(missionType)), true);
         }
 
         internal void OnMissionCompleted(int missionType, string completionSummary)
