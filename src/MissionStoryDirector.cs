@@ -183,51 +183,6 @@ namespace EnRAGEPlayerFactionExtension
             _dialogueGapMs = 2600;
         }
 
-        private static string[] GetOpeningLines(MissionDefinition definition, int difficulty)
-        {
-            string qualifier = difficulty >= 2 ? "No habrá margen para errores." :
-                (difficulty == 1 ? "Mantén los ojos abiertos." : "No te precipites.");
-            switch (definition.ObjectiveType)
-            {
-                case MissionObjectiveType.PatrolRoute:
-                    return new[] {
-                        "ENCARGADO: Han visto gente extraña cerca de nuestros caminos. Revisa la frontera y vigila las salidas.",
-                        "ENCARGADO: Sigue los puntos en orden y memoriza por dónde se mueven.",
-                        "ENCARGADO: " + qualifier
-                    };
-                case MissionObjectiveType.RecoverSupplies:
-                    return new[] {
-                        "ENCARGADO: Un alijo nuestro quedó atrás y puede que alguien lo haya encontrado.",
-                        "ENCARGADO: Comprueba quién lo vigila antes de acercarte a las provisiones.",
-                        "ENCARGADO: " + qualifier
-                    };
-                case MissionObjectiveType.HoldArea:
-                    return new[] {
-                        "ENCARGADO: Vigila el punto marcado y observa quién utiliza el camino.",
-                        "ENCARGADO: El reloj se detiene si abandonas el perímetro; puede aparecer una partida.",
-                        "ENCARGADO: " + qualifier
-                    };
-                case MissionObjectiveType.DeliverDispatch:
-                    return new[] {
-                        "ENCARGADO: Lleva el despacho al contacto y no se lo entregues al primero que pregunte.",
-                        "ENCARGADO: Escucha lo que tenga que decir y confirma la ruta antes de soltar el paquete.",
-                        "ENCARGADO: " + qualifier
-                    };
-                case MissionObjectiveType.InterceptConvoy:
-                    return new[] {
-                        "ENCARGADO: Un convoy lleva suministros que necesitamos. Localízalo y despeja la ruta.",
-                        "ENCARGADO: Busca cobertura y controla a los escoltas antes de tocar la carga.",
-                        "ENCARGADO: " + qualifier
-                    };
-                default:
-                    return new[] {
-                        "ENCARGADO: Quiero información fiable sobre ese camino. Examina el terreno antes de volver.",
-                        "ENCARGADO: Busca señales, no problemas. Una pista concreta puede ahorrarnos una pelea.",
-                        "ENCARGADO: " + qualifier
-                    };
-            }
-        }
-
         private static string[] GetCheckpointLines(MissionDefinition definition, int objectiveIndex)
         {
             if (definition.CheckpointLines != null && definition.CheckpointLines.Count > 0)
