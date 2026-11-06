@@ -100,7 +100,7 @@ namespace EnRAGEPlayerFactionExtension
             List<string> customLines = finalExchange ? definition.HandoverLines : definition.ContactLines;
             if (customLines != null && customLines.Count > 0)
             {
-                QueueDialogue(customLines, true);
+                QueueDialogue(customLines);
                 return;
             }
 
@@ -110,7 +110,7 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     "CONTACTO: Creía que mandarían a otro. ¿Traes el despacho?",
                     "Tú: Primero dime si la ruta sigue limpia. No pienso llevar a mi banda a una trampa."
-                }, true);
+                });
         }
 
         internal void OnObjectiveInteraction(Ped player, string context)
