@@ -1128,11 +1128,11 @@ namespace EnRAGEPlayerFactionExtension
                         {
                             _faction.MissionObjectiveIndex = 2;
                             SaveFaction();
-                            _story.OnCourierConversation(_objectiveController.CourierPed, player, false);
+                            _story.OnCourierConversation(_faction.MissionType, _objectiveController.CourierPed, player, false);
                         }
                         else if (_faction.MissionObjectiveIndex >= 2)
                         {
-                            _story.OnCourierConversation(_objectiveController.CourierPed, player, true);
+                            _story.OnCourierConversation(_faction.MissionType, _objectiveController.CourierPed, player, true);
                             _story.OnObjectiveInteraction(player, "ENTREGA: Le pasas el despacho al contacto y esperas a que lo guarde.");
                             AdvanceMissionToReturn("Has entregado el despacho al contacto.");
                         }
