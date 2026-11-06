@@ -13,10 +13,6 @@ namespace EnRAGEPlayerFactionExtension
     /// </summary>
     internal sealed class MissionObjectiveController
     {
-        private const int MissionSupplyCache = 2;
-        private const int MissionStakeout = 3;
-        private const int MissionCourier = 4;
-        private const int MissionConvoy = 5;
         private const string ConvoyWagonModel = "wagon02x";
         private const string CourierModel = "U_M_M_RhdBartender_01";
         private static readonly string[] GuardModels = { "G_M_M_UniCriminals_01", "G_M_M_UniCriminals_02", "G_M_M_UniDuster_01" };
@@ -47,10 +43,11 @@ namespace EnRAGEPlayerFactionExtension
             Vector3 target = MissionTarget;
             if (target == Vector3.Zero) return;
 
-            int missionType = _faction.MissionType;
+            MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
+            MissionObjectiveType objectiveType = definition.ObjectiveType;
             float distance = player.Position.DistanceTo(target);
 
-            if (missionType == MissionCourier)
+            if (objectiveType == MissionObjectiveType.DeliverDispatch)
             {
                 if (distance <= 85f && Game.GameTime >= _nextCourierSpawnAttemptAt)
                 {
@@ -61,12 +58,23 @@ namespace EnRAGEPlayerFactionExtension
                 return;
             }
 
-            if (missionType != MissionSupplyCache && missionType != MissionStakeout && missionType != MissionConvoy)
+            if (objectiveType != MissionObjectiveType.RecoverSupplies &&
+                objectiveType != MissionObjectiveType.HoldArea &&
+                objectiveType != MissionObjectiveType.InterceptConvoy)
                 return;
 
-            float triggerDistance = missionType == MissionConvoy ? 115f : (missionType == MissionStakeout ? 35f : 55f);
+            if (objectiveType == MissionObjectiveType.HoldArea && !definition.SpawnEncounter)
+                return;
+
+            float triggerDistance = objectiveType == MissionObjectiveType.InterceptConvoy
+                ? 115f
+                : (objectiveType == MissionObjectiveType.HoldArea
+                    ? definition.AreaRadius + 10f
+                    : 55f);
             if (distance > triggerDistance) return;
-            if (missionType == MissionStakeout && _faction.MissionWaitProgressMs < 6000) return;
+            if (objectiveType == MissionObjectiveType.HoldArea &&
+                _faction.MissionWaitProgressMs < definition.EncounterAtSeconds * 1000)
+                return;
 
             int processId = Process.GetCurrentProcess().Id;
             if (_faction.MissionEncounterProcessId != 0 && _faction.MissionEncounterProcessId != processId)
@@ -81,16 +89,16 @@ namespace EnRAGEPlayerFactionExtension
             if (_faction.MissionEncounterSpawned || Game.GameTime < _nextSpawnAttemptAt) return;
 
             _nextSpawnAttemptAt = Game.GameTime + 5000;
-            if (missionType == MissionConvoy) EnsureWagon(target);
-            SpawnGuards(player, target, missionType);
+            if (objectiveType == MissionObjectiveType.InterceptConvoy) EnsureWagon(target);
+            SpawnGuards(player, target, objectiveType);
             if (_faction.MissionConvoyEnemyHandles.Count > 0)
             {
                 _faction.MissionEncounterSpawned = true;
                 _faction.MissionEncounterProcessId = processId;
                 _spawnFailures = 0;
                 SaveFaction();
-                Log.Write("Mission encounter created. Type=" + missionType + ", guards=" + _faction.MissionConvoyEnemyHandles.Count +
-                          ", difficulty=" + _faction.MissionDifficulty + ".");
+                Log.Write("Mission encounter created. Type=" + definition.Key + ", guards=" +
+                    _faction.MissionConvoyEnemyHandles.Count + ", difficulty=" + _faction.MissionDifficulty + ".");
             }
             else
             {
@@ -202,26 +210,26 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Convoy wagon creation warning: " + ex.Message); }
         }
 
-        private void SpawnGuards(Ped player, Vector3 target, int missionType)
+        private void SpawnGuards(Ped player, Vector3 target, MissionObjectiveType objectiveType)
         {
-            int desired = missionType == MissionConvoy
+            int desired = objectiveType == MissionObjectiveType.InterceptConvoy ||
+                objectiveType == MissionObjectiveType.HoldArea
                 ? 2 + Math.Max(0, Math.Min(2, _faction.MissionDifficulty))
-                : (missionType == MissionStakeout
-                    ? 2 + Math.Max(0, Math.Min(2, _faction.MissionDifficulty))
-                    : 2 + Math.Max(0, Math.Min(1, _faction.MissionDifficulty)));
+                : 2 + Math.Max(0, Math.Min(1, _faction.MissionDifficulty));
             for (int i = 0; i < desired; i++)
             {
                 double angle = Math.PI * 2.0 * i / desired + _faction.MissionsCompleted * 0.43;
                 float radius = 9.0f + (i % 2) * 3.5f;
-                Vector3 position = new Vector3(target.X + (float)Math.Cos(angle) * radius, target.Y + (float)Math.Sin(angle) * radius, target.Z + 0.25f);
+                Vector3 position = new Vector3(target.X + (float)Math.Cos(angle) * radius,
+                    target.Y + (float)Math.Sin(angle) * radius, target.Z + 0.25f);
                 string modelName = GuardModels[i % GuardModels.Length];
                 try
                 {
                     uint hash = MISC.GET_HASH_KEY(modelName);
                     PedHash pedHash = (PedHash)Enum.ToObject(typeof(PedHash), hash);
                     Model model = new Model(pedHash);
-                    if (!model.IsValid || !model.IsPed) { Log.Write("Convoy guard model is invalid: " + modelName + "."); continue; }
-                    if (!model.IsLoaded && !model.Request(1500)) { Log.Write("Convoy guard model did not load: " + modelName + "."); continue; }
+                    if (!model.IsValid || !model.IsPed) { Log.Write("Mission guard model is invalid: " + modelName + "."); continue; }
+                    if (!model.IsLoaded && !model.Request(1500)) { Log.Write("Mission guard model did not load: " + modelName + "."); continue; }
                     Ped guard = World.CreatePed(pedHash, position, (float)((angle * 180.0 / Math.PI + 180.0) % 360.0));
                     if (guard == null || !guard.Exists()) continue;
                     ENTITY.SET_ENTITY_AS_MISSION_ENTITY(guard.Handle, true, true);
