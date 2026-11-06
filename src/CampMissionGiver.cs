@@ -44,6 +44,7 @@ namespace EnRAGEPlayerFactionExtension
         private Ped _ped;
         private Prop _supplyCache;
         private int _nextCacheSpawnRetryAt;
+        private int _supplyCacheSpawnFailures;
         private int _prompt;
         private int _promptGroup;
         private int _lootPrompt;
@@ -103,15 +104,17 @@ namespace EnRAGEPlayerFactionExtension
                 campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (campCentre == Vector3.Zero) return;
 
+            MissionObjectiveType activeObjectiveType = MissionCatalog.Get(_faction.MissionType).ObjectiveType;
+            bool courierNeedsFallbackDrop = activeObjectiveType == MissionObjectiveType.DeliverDispatch &&
+                _objectiveController.CourierSpawnFailed;
             if (_faction.MissionStage == 1 &&
-                MissionCatalog.Get(_faction.MissionType).ObjectiveType == MissionObjectiveType.RecoverSupplies)
+                (activeObjectiveType == MissionObjectiveType.RecoverSupplies || courierNeedsFallbackDrop))
                 MaintainSupplyCacheProp(player);
             else if (_faction.MissionCachePropHandle != 0)
             {
                 DeleteSupplyCacheProp();
                 SaveFaction();
             }
-            MissionObjectiveType activeObjectiveType = MissionCatalog.Get(_faction.MissionType).ObjectiveType;
             if (_faction.MissionStage == 1 &&
                 (activeObjectiveType == MissionObjectiveType.RecoverSupplies ||
                  activeObjectiveType == MissionObjectiveType.HoldArea ||
@@ -625,6 +628,14 @@ namespace EnRAGEPlayerFactionExtension
                             ? (string.IsNullOrWhiteSpace(definition.FirstPromptLabel) ? "Hablar con el contacto" : definition.FirstPromptLabel)
                             : (string.IsNullOrWhiteSpace(definition.SecondPromptLabel) ? "Entregar despacho" : definition.SecondPromptLabel);
                     }
+                    else if (_objectiveController.CourierSpawnFailed &&
+                        _supplyCache != null && _supplyCache.Exists() &&
+                        player.Position.DistanceTo(_supplyCache.Position) <= definition.InteractionRadius)
+                    {
+                        entityHandle = _supplyCache.Handle;
+                        promptLabel = string.IsNullOrWhiteSpace(definition.SecondPromptLabel)
+                            ? "Depositar despacho" : definition.SecondPromptLabel;
+                    }
                 }
             }
 
@@ -807,6 +818,9 @@ namespace EnRAGEPlayerFactionExtension
             RemoveObjectivePrompt();
             _objectiveController.CleanupConvoy();
             if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
+            _supplyCacheSpawnFailures = 0;
+            _nextCacheSpawnRetryAt = 0;
+            _supplyCache = null;
             Random missionRandom = new Random(unchecked(Game.GameTime * 397 ^ _faction.MissionsCompleted * 7919 ^ _faction.MissionPrestige));
             _faction.MissionDifficulty = MissionCatalog.DetermineDifficulty(_faction.MissionsCompleted, missionRandom);
             _faction.MissionType = MissionCatalog.SelectNext(_faction.MissionsCompleted,
@@ -936,6 +950,7 @@ namespace EnRAGEPlayerFactionExtension
                     if (valid)
                     {
                         _supplyCache = candidate;
+                        _supplyCacheSpawnFailures = 0;
                         return;
                     }
                 }
@@ -945,7 +960,7 @@ namespace EnRAGEPlayerFactionExtension
                 SaveFaction();
             }
 
-            if (Game.GameTime < _nextCacheSpawnRetryAt)
+            if (_supplyCacheSpawnFailures >= 3 || Game.GameTime < _nextCacheSpawnRetryAt)
                 return;
             _nextCacheSpawnRetryAt = Game.GameTime + 5000;
 
@@ -954,12 +969,12 @@ namespace EnRAGEPlayerFactionExtension
                 Model model = new Model(SupplyCacheModel);
                 if (!model.IsValid)
                 {
-                    Log.Write("Supply-cache prop model is invalid: " + SupplyCacheModel + ".");
+                    RegisterSupplyCacheSpawnFailure("model is invalid: " + SupplyCacheModel);
                     return;
                 }
                 if (!model.IsLoaded && !model.Request(1000))
                 {
-                    Log.Write("Supply-cache prop model did not load: " + SupplyCacheModel + ".");
+                    RegisterSupplyCacheSpawnFailure("model did not load: " + SupplyCacheModel);
                     return;
                 }
 
@@ -967,19 +982,27 @@ namespace EnRAGEPlayerFactionExtension
                 Prop created = World.CreateProp(model, target, false, true);
                 if (created == null || !created.Exists())
                 {
-                    Log.Write("Supply-cache prop could not be created at " + target + ".");
+                    RegisterSupplyCacheSpawnFailure("prop creation returned no entity");
                     return;
                 }
 
                 _supplyCache = created;
                 _faction.MissionCachePropHandle = created.Handle;
+                _supplyCacheSpawnFailures = 0;
                 SaveFaction();
-                Log.Write("Independent mission supply cache created. Handle=" + created.Handle + ", position=" + target + ".");
+                Log.Write("Mission objective prop created. Handle=" + created.Handle + ", position=" + target + ".");
             }
             catch (Exception ex)
             {
-                Log.Write("Supply-cache prop spawn warning: " + ex.Message);
+                RegisterSupplyCacheSpawnFailure(ex.Message);
             }
+        }
+
+        private void RegisterSupplyCacheSpawnFailure(string reason)
+        {
+            _supplyCacheSpawnFailures++;
+            Log.Write("Mission objective prop spawn failed (attempt " + _supplyCacheSpawnFailures +
+                "/3): " + reason + ".");
         }
 
         private void DeleteSupplyCacheProp()
@@ -1008,6 +1031,8 @@ namespace EnRAGEPlayerFactionExtension
 
             _supplyCache = null;
             _faction.MissionCachePropHandle = 0;
+            _supplyCacheSpawnFailures = 0;
+            _nextCacheSpawnRetryAt = 0;
         }
 
         private void UpdateMissionProgress(Ped player, Vector3 campCentre)
@@ -1120,21 +1145,34 @@ namespace EnRAGEPlayerFactionExtension
                         _story.OnCheckpoint(_faction.MissionType, 1);
                     }
 
-                    if (_faction.MissionObjectiveReady &&
-                        _objectiveController.CourierAvailable &&
-                        _objectivePromptJustCompleted)
+                    if (_faction.MissionObjectiveReady && distance <= definition.ObjectiveRadius &&
+                        !_objectiveController.CourierAvailable && _objectiveController.CourierSpawnFailed &&
+                        _supplyCacheSpawnFailures >= 3)
                     {
-                        if (_faction.MissionObjectiveIndex == 1)
+                        AdvanceMissionToReturn("El contacto y el punto de entrega alternativo no pudieron aparecer. El encargo se cierra sin dejar la misión bloqueada.");
+                    }
+                    else if (_faction.MissionObjectiveReady && _objectivePromptJustCompleted)
+                    {
+                        if (_objectiveController.CourierAvailable)
                         {
-                            _faction.MissionObjectiveIndex = 2;
-                            SaveFaction();
-                            _story.OnCourierConversation(_faction.MissionType, _objectiveController.CourierPed, player, false);
+                            if (_faction.MissionObjectiveIndex == 1)
+                            {
+                                _faction.MissionObjectiveIndex = 2;
+                                SaveFaction();
+                                _story.OnCourierConversation(_faction.MissionType, _objectiveController.CourierPed, player, false);
+                            }
+                            else if (_faction.MissionObjectiveIndex >= 2)
+                            {
+                                _story.OnCourierConversation(_faction.MissionType, _objectiveController.CourierPed, player, true);
+                                _story.OnObjectiveInteraction(player, "ENTREGA: Le pasas el despacho al contacto y esperas a que lo guarde.");
+                                AdvanceMissionToReturn("Has entregado el despacho al contacto.");
+                            }
                         }
-                        else if (_faction.MissionObjectiveIndex >= 2)
+                        else if (_objectiveController.CourierSpawnFailed &&
+                            _supplyCache != null && _supplyCache.Exists())
                         {
-                            _story.OnCourierConversation(_faction.MissionType, _objectiveController.CourierPed, player, true);
-                            _story.OnObjectiveInteraction(player, "ENTREGA: Le pasas el despacho al contacto y esperas a que lo guarde.");
-                            AdvanceMissionToReturn("Has entregado el despacho al contacto.");
+                            _story.OnObjectiveInteraction(player, "ENTREGA: Dejas el despacho en el punto alternativo acordado.");
+                            AdvanceMissionToReturn("El contacto no apareció. Dejaste el despacho en un punto de entrega alternativo.");
                         }
                     }
                 }
@@ -1253,7 +1291,8 @@ namespace EnRAGEPlayerFactionExtension
         private void AdvanceMissionToReturn(string message)
         {
             MissionDefinition definition = MissionCatalog.Get(_faction.MissionType);
-            if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies)
+            if (definition.ObjectiveType == MissionObjectiveType.RecoverSupplies ||
+                (definition.ObjectiveType == MissionObjectiveType.DeliverDispatch && _faction.MissionCachePropHandle != 0))
                 DeleteSupplyCacheProp();
             RemoveLootPrompt();
             RemoveObjectivePrompt();
@@ -1285,7 +1324,8 @@ namespace EnRAGEPlayerFactionExtension
 
             string completedName = GetMissionTitle(_faction.MissionType);
             MissionDefinition completedDefinition = MissionCatalog.Get(_faction.MissionType);
-            if (completedDefinition.ObjectiveType == MissionObjectiveType.RecoverSupplies)
+            if (completedDefinition.ObjectiveType == MissionObjectiveType.RecoverSupplies ||
+                _faction.MissionCachePropHandle != 0)
                 DeleteSupplyCacheProp();
             if (completedDefinition.ObjectiveType == MissionObjectiveType.InterceptConvoy ||
                 completedDefinition.ObjectiveType == MissionObjectiveType.DeliverDispatch)
