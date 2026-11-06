@@ -196,7 +196,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 16,
+                SchemaVersion = 17,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -226,6 +226,7 @@ namespace EnRAGEPlayerFactionExtension
                 LastMissionType = -1,
                 MissionEncounterSpawned = false,
                 MissionEncounterProcessId = 0,
+                MissionCourierPedHandle = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)

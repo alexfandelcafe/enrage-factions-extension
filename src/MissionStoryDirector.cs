@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using RDR2;
 using RDR2.Native;
 
@@ -28,6 +29,8 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextDialogueAt;
         private int _dialogueGapMs = 2600;
         private bool _combatMusicActive;
+        private bool _inspectionAnimLoaded;
+        private int _nextAnimationRequestAt;
 
         internal MissionStoryDirector(Action<string> notify)
         {
@@ -36,14 +39,25 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void Tick()
         {
+            MaintainInspectionDictionary();
             if (_dialogue.Count == 0 || Game.GameTime < _nextDialogueAt) return;
-            try { _notify(_dialogue.Dequeue()); }
-            catch (Exception ex) { Log.Write("Mission dialogue display warning: " + ex.Message); }
+            string line = _dialogue.Dequeue();
+            try
+            {
+                if (!TryDisplaySubtitle(line))
+                    _notify(line);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission dialogue display warning: " + ex.Message);
+                try { _notify(line); } catch { }
+            }
             _nextDialogueAt = Game.GameTime + _dialogueGapMs;
         }
 
         internal void BeginMission(int missionType, int difficulty, Ped missionGiver, Ped player)
         {
+            RequestInspectionDictionary();
             PlayFrontendCue("SELECT");
             FaceEachOther(missionGiver, player);
             QueueDialogue(GetOpeningLines(missionType, difficulty));
@@ -81,7 +95,7 @@ namespace EnRAGEPlayerFactionExtension
             PlayInspectionAnimation(player);
             PlayFrontendCue("SELECT");
             if (!string.IsNullOrWhiteSpace(context))
-                QueueDialogue(new[] { context });
+                QueueDialogue(new[] { context }, true);
         }
 
         internal void PlayReminderCue()
@@ -93,14 +107,14 @@ namespace EnRAGEPlayerFactionExtension
         {
             StopCombatMusic(true);
             PlayFrontendCue("SELECT");
-            QueueDialogue(GetReturnLines(missionType));
+            QueueDialogue(GetReturnLines(missionType), true);
         }
 
         internal void OnMissionCompleted(int missionType)
         {
             StopCombatMusic(true);
             PlayFrontendCue("SELECT");
-            QueueDialogue(new[] { "ENCARGADO: Buen trabajo. La banda recordará que has cumplido." });
+            QueueDialogue(new[] { "ENCARGADO: Buen trabajo. La banda recordará que has cumplido." }, true);
         }
 
         internal void OnScriptAborted()
@@ -109,13 +123,15 @@ namespace EnRAGEPlayerFactionExtension
             StopCombatMusic(false);
         }
 
-        private void QueueDialogue(IEnumerable<string> lines)
+        private void QueueDialogue(IEnumerable<string> lines, bool append = false)
         {
-            _dialogue.Clear();
+            bool pendingBeforeAppend = append && _dialogue.Count > 0;
+            if (!append) _dialogue.Clear();
             if (lines != null)
                 foreach (string line in lines)
                     if (!string.IsNullOrWhiteSpace(line)) _dialogue.Enqueue(line);
-            _nextDialogueAt = Game.GameTime + 1400;
+            if (!pendingBeforeAppend && _dialogue.Count > 0)
+                _nextDialogueAt = Game.GameTime + 1400;
             _dialogueGapMs = 2600;
         }
 
@@ -175,7 +191,7 @@ namespace EnRAGEPlayerFactionExtension
                 case 1:
                     return new[] { "PATRULLA: Punto registrado. No abandones el recorrido; falta terreno por cubrir." };
                 case 2:
-                    return new[] { "ALiJO: Has localizado el escondite. Antes de tocar las provisiones, comprueba quién las está vigilando." };
+                    return new[] { "ALIJO: Has localizado el escondite. Antes de tocar las provisiones, comprueba quién las está vigilando." };
                 case 3:
                     return new[] { "VIGILANCIA: Mantén la posición. El movimiento en el camino podría no ser casual." };
                 case 4:
@@ -189,7 +205,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             switch (missionType)
             {
-                case 2: return new[] { "ALiJO: Te han descubierto. Despeja la zona antes de recoger las provisiones." };
+                case 2: return new[] { "ALIJO: Te han descubierto. Despeja la zona antes de recoger las provisiones." };
                 case 3: return new[] { "VIGILANCIA: ¡Una partida se aproxima al cruce! Aguanta la posición y neutraliza a los atacantes." };
                 default: return new[] { "CONVOY: Los escoltas están alerta. Busca cobertura y neutraliza la amenaza antes de registrar la carga." };
             }
@@ -235,6 +251,63 @@ namespace EnRAGEPlayerFactionExtension
             _combatMusicActive = false;
         }
 
+        private bool TryDisplaySubtitle(string line)
+        {
+            try
+            {
+                Type screenType = typeof(Game).Assembly.GetType("RDR2.UI.Screen", false);
+                if (screenType == null) return false;
+
+                MethodInfo[] methods = screenType.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                foreach (MethodInfo method in methods)
+                {
+                    if (method.Name != "DisplaySubtitle") continue;
+                    ParameterInfo[] parameters = method.GetParameters();
+
+                    if (parameters.Length == 2 &&
+                        parameters[0].ParameterType == typeof(string) &&
+                        parameters[1].ParameterType == typeof(int))
+                    {
+                        method.Invoke(null, new object[] { line, 4200 });
+                        return true;
+                    }
+
+                    if (parameters.Length == 1 && parameters[0].ParameterType == typeof(string))
+                    {
+                        method.Invoke(null, new object[] { line });
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Native subtitle display unavailable; falling back to notification: " + ex.Message);
+            }
+            return false;
+        }
+
+        private void RequestInspectionDictionary()
+        {
+            if (_inspectionAnimLoaded || Game.GameTime < _nextAnimationRequestAt) return;
+            _nextAnimationRequestAt = Game.GameTime + 900;
+            try
+            {
+                Function.Call(RequestAnimDictHash, new InputArgument[] { InspectionAnimDictionary });
+                _inspectionAnimLoaded = Function.Call<bool>(HasAnimDictLoadedHash,
+                    new InputArgument[] { InspectionAnimDictionary });
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Inspection animation dictionary request warning: " + ex.Message);
+            }
+        }
+
+        private void MaintainInspectionDictionary()
+        {
+            if (_inspectionAnimLoaded) return;
+            RequestInspectionDictionary();
+        }
+
         private static void PlayFrontendCue(string cue)
         {
             try
@@ -258,14 +331,13 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex) { Log.Write("Mission dialogue facing task warning: " + ex.Message); }
         }
 
-        private static bool PlayInspectionAnimation(Ped player)
+        private bool PlayInspectionAnimation(Ped player)
         {
             if (player == null || !player.Exists() || player.IsOnMount || player.IsInVehicle) return false;
             try
             {
-                Function.Call(RequestAnimDictHash, new InputArgument[] { InspectionAnimDictionary });
-                if (!Function.Call<bool>(HasAnimDictLoadedHash, new InputArgument[] { InspectionAnimDictionary }))
-                    return false;
+                MaintainInspectionDictionary();
+                if (!_inspectionAnimLoaded) return false;
 
                 Function.Call(TaskPlayAnimHash, new InputArgument[]
                 {
