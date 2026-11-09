@@ -505,6 +505,18 @@ namespace EnRAGEPlayerFactionExtension
                    string.Equals(_faction.CampSiteId, siteId, StringComparison.OrdinalIgnoreCase);
         }
 
+        internal bool ShouldBlockCompanionRecruitment()
+        {
+            // This special gate is opt-in: it applies only when Companion's own INI
+            // explicitly sets RecruitRosterId=player_faction.
+            if (_bridge == null || !_bridge.ShouldGateCompanionRecruitment)
+                return false;
+
+            // Founded is persisted before enRAGE finishes registering the live gang.
+            // Require both states so recruitment cannot unlock during that transition.
+            return _faction == null || !_faction.Founded || !_factionRegistered;
+        }
+
         internal bool IsCampManagerPed(Ped ped)
         {
             if (ped == null || !ped.Exists() || _faction == null) return false;
