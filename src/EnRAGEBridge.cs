@@ -3715,6 +3715,45 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+        internal static bool BlockGenericRecruitPromptBeforeFoundingPrefix(object[] __args)
+        {
+            try
+            {
+                if (Runtime == null || !Runtime.ShouldBlockCompanionRecruitment())
+                    return true;
+
+                Type hooks = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
+                    .FirstOrDefault(t => t != null);
+                MethodInfo hide = hooks != null ? hooks.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "HideGenericRecruitPrompt" && m.IsStatic && m.GetParameters().Length == 0) : null;
+                if (hide != null) hide.Invoke(null, null);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion pre-founding prompt gate warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
+        internal static bool BlockGenericRecruitExecutionBeforeFoundingPrefix()
+        {
+            try
+            {
+                if (Runtime == null || !Runtime.ShouldBlockCompanionRecruitment())
+                    return true;
+
+                Log.Write("Blocked Companion generic recruitment because player_faction has not been founded and registered.");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion direct recruitment gate warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
         internal static bool BlockCampManagerGenericRecruitmentPrefix(object[] __args, ref bool __result)
         {
             try
