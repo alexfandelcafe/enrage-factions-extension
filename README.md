@@ -157,6 +157,8 @@ RecruitRosterId=player_faction
 
 La extensión fuerza esos valores cuando detecta la integración de Companion. No deben cambiarse por otros IDs en el INI de Companion.
 
+Cuando `EnRAGECompanionsExtension.ini` tiene `RecruitRosterId=player_faction`, la extensión también bloquea el reclutamiento genérico de Companion hasta que la facción esté fundada y registrada en enRAGE: no aparece «Cabalga conmigo» antes de ese momento y el método de reclutamiento tiene una protección adicional. La comprobación se hace desde esta extensión; no requiere modificar el repositorio de Companion.
+
 Los registros creados por Companion con prefijos `extcomp_` y `extvdl_` se reconcilian con el roster normal de enRAGE. La extensión revisa tanto `NemesisMod.Roster` como `StoryRoster`, mueve los registros aplicables a la facción `player_faction` y guarda el roster. No intenta reconocer miembros buscando NPCs que compartan el mismo modelo.
 
 ### Interacción social nativa: R/F
