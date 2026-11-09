@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -56,11 +57,16 @@ namespace EnRAGEPlayerFactionExtension
         private bool _companionDismissedProfilePatched;
         private bool _companionReleasedProfilePatched;
         private bool _companionCampManagerRecruitmentGuardPatched;
+        private bool _companionRecruitmentPromptGatePatched;
+        private bool _companionRecruitmentExecutionGatePatched;
+        private bool _companionRecruitmentGateConfigRead;
+        private bool _companionRecruitmentGateEnabled;
         private int _nextCompanionRosterNormalizeAt;
         private int _nextPlayerFactionNeutralityAt;
 
         internal bool IsAvailable { get { return _mainType != null && _gangsType != null; } }
         internal object MainInstance { get { return FounderPatches.MainInstance; } }
+        internal bool ShouldGateCompanionRecruitment { get { return _companionRecruitmentGateEnabled; } }
 
         internal bool TryAttach()
         {
@@ -1941,7 +1947,8 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched &&
                 _companionNativeSocialPrefixPatched && _companionDismissedProfilePatched &&
-                _companionReleasedProfilePatched && _companionCampManagerRecruitmentGuardPatched)) return;
+                _companionReleasedProfilePatched && _companionCampManagerRecruitmentGuardPatched &&
+                _companionRecruitmentPromptGatePatched && _companionRecruitmentExecutionGatePatched)) return;
             try
             {
                 Type hooks = AppDomain.CurrentDomain.GetAssemblies()
@@ -1949,6 +1956,7 @@ namespace EnRAGEPlayerFactionExtension
                     .FirstOrDefault(t => t != null);
                 if (hooks == null) return;
 
+                ReadCompanionRecruitmentGateSetting();
                 ForceCompanionRecruitmentIds(hooks);
 
                 if (!_companionFriendshipPatched)
@@ -1987,6 +1995,38 @@ namespace EnRAGEPlayerFactionExtension
                         PatchFirstIfFound(socialPrefix, nameof(FounderPatches.AllowNativeSocialForPlayerFactionPrefix));
                         _companionNativeSocialPrefixPatched = true;
                         Log.Write("Companion social-prefix bypass installed for player-faction roster members.");
+                    }
+                }
+
+                if (!_companionRecruitmentPromptGatePatched)
+                {
+                    MethodInfo genericPrompt = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "UpdateGenericRecruitPrompt" && m.IsStatic &&
+                        m.GetParameters().Length == 2 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(Ped));
+                    if (genericPrompt != null)
+                    {
+                        PatchFirstIfFound(genericPrompt, nameof(FounderPatches.BlockGenericRecruitPromptBeforeFoundingPrefix));
+                        _companionRecruitmentPromptGatePatched = true;
+                        Log.Write("Companion generic recruitment prompt gate installed.");
+                    }
+                }
+
+                if (!_companionRecruitmentExecutionGatePatched)
+                {
+                    MethodInfo recruitGeneric = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "RecruitGeneric" && m.IsStatic &&
+                        m.GetParameters().Length == 4 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(Ped) &&
+                        m.GetParameters()[2].ParameterType == typeof(string) &&
+                        m.GetParameters()[3].ParameterType == typeof(Ped));
+                    if (recruitGeneric != null)
+                    {
+                        PatchFirstIfFound(recruitGeneric, nameof(FounderPatches.BlockGenericRecruitExecutionBeforeFoundingPrefix));
+                        _companionRecruitmentExecutionGatePatched = true;
+                        Log.Write("Companion direct generic recruitment gate installed.");
                     }
                 }
 
@@ -2037,6 +2077,39 @@ namespace EnRAGEPlayerFactionExtension
 
             }
             catch (Exception ex) { Log.Write("Companion integration patch retry warning: " + Unwrap(ex)); }
+        }
+
+        private void ReadCompanionRecruitmentGateSetting()
+        {
+            if (_companionRecruitmentGateConfigRead) return;
+            _companionRecruitmentGateConfigRead = true;
+            _companionRecruitmentGateEnabled = false;
+            string path = Path.Combine(ExtensionPaths.ScriptsDirectory, "EnRAGECompanionsExtension.ini");
+            try
+            {
+                if (!File.Exists(path)) return;
+                foreach (string raw in File.ReadAllLines(path))
+                {
+                    string line = raw.Trim();
+                    if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#") || line.StartsWith("[")) continue;
+                    int split = line.IndexOf('=');
+                    if (split <= 0) continue;
+                    string key = line.Substring(0, split).Trim();
+                    string value = line.Substring(split + 1).Trim();
+                    if (key.Equals("RecruitRosterId", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _companionRecruitmentGateEnabled = value.Equals("player_faction", StringComparison.OrdinalIgnoreCase);
+                        Log.Write("Companion pre-founding recruitment gate " +
+                            (_companionRecruitmentGateEnabled ? "enabled" : "disabled") +
+                            " from RecruitRosterId=" + value + ".");
+                        return;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Could not read Companion RecruitRosterId for recruitment gate: " + Unwrap(ex));
+            }
         }
 
         private bool ApplyCompanionRankAffinity(object record)
