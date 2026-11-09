@@ -452,6 +452,16 @@ namespace EnRAGEPlayerFactionExtension
                 "; camp NPC and saved blips left intact.");
         }
 
+        internal bool IsPlayerFactionReadyForRecruitment
+        {
+            get
+            {
+                return _faction != null && _faction.Founded && _factionRegistered &&
+                    string.Equals(_faction.Id, "player_faction", StringComparison.OrdinalIgnoreCase) &&
+                    _bridge != null && _bridge.IsAvailable;
+            }
+        }
+
         internal int MissionPrestigeBonus
         {
             get { return Math.Max(0, Math.Min(100, _faction.MissionPrestige)); }

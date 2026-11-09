@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
@@ -56,6 +57,8 @@ namespace EnRAGEPlayerFactionExtension
         private bool _companionDismissedProfilePatched;
         private bool _companionReleasedProfilePatched;
         private bool _companionCampManagerRecruitmentGuardPatched;
+        private bool _companionRecruitPromptGatePatched;
+        private bool _companionRecruitGenericGatePatched;
         private int _nextCompanionRosterNormalizeAt;
         private int _nextPlayerFactionNeutralityAt;
 
@@ -1941,13 +1944,48 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (_harmony == null || (_companionFriendshipPatched && _companionRosterCommitPatched &&
                 _companionNativeSocialPrefixPatched && _companionDismissedProfilePatched &&
-                _companionReleasedProfilePatched && _companionCampManagerRecruitmentGuardPatched)) return;
+                _companionReleasedProfilePatched && _companionCampManagerRecruitmentGuardPatched &&
+                _companionRecruitPromptGatePatched && _companionRecruitGenericGatePatched)) return;
             try
             {
                 Type hooks = AppDomain.CurrentDomain.GetAssemblies()
                     .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
                     .FirstOrDefault(t => t != null);
                 if (hooks == null) return;
+
+                // Gate only the Companion generic recruitment path when its on-disk INI explicitly
+                // uses RecruitRosterId=player_faction. The gate itself lives in this faction extension.
+                if (!_companionRecruitPromptGatePatched)
+                {
+                    MethodInfo genericPrompt = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "UpdateGenericRecruitPrompt" && m.IsStatic &&
+                        m.GetParameters().Length == 2 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(Ped));
+                    if (genericPrompt != null)
+                    {
+                        PatchFirstIfFound(genericPrompt, nameof(FounderPatches.BlockCompanionGenericRecruitPromptBeforeFoundingPrefix));
+                        _companionRecruitPromptGatePatched = true;
+                        Log.Write("Companion generic recruitment-prompt founding gate installed.");
+                    }
+                }
+
+                if (!_companionRecruitGenericGatePatched)
+                {
+                    MethodInfo genericRecruit = hooks.GetMethods(StaticFlags).FirstOrDefault(m =>
+                        m.Name == "RecruitGeneric" && m.IsStatic &&
+                        m.GetParameters().Length == 4 &&
+                        m.GetParameters()[0].ParameterType == typeof(object) &&
+                        m.GetParameters()[1].ParameterType == typeof(Ped) &&
+                        m.GetParameters()[2].ParameterType == typeof(string) &&
+                        m.GetParameters()[3].ParameterType == typeof(Ped));
+                    if (genericRecruit != null)
+                    {
+                        PatchFirstIfFound(genericRecruit, nameof(FounderPatches.BlockCompanionGenericRecruitBeforeFoundingPrefix));
+                        _companionRecruitGenericGatePatched = true;
+                        Log.Write("Companion direct generic-recruitment founding guard installed.");
+                    }
+                }
 
                 ForceCompanionRecruitmentIds(hooks);
 
@@ -2233,6 +2271,8 @@ namespace EnRAGEPlayerFactionExtension
             _companionNativeSocialPrefixPatched = false;
             _companionDismissedProfilePatched = false;
             _companionReleasedProfilePatched = false;
+            _companionRecruitPromptGatePatched = false;
+            _companionRecruitGenericGatePatched = false;
             _nextCompanionRosterNormalizeAt = 0;
         }
 
@@ -2964,6 +3004,10 @@ namespace EnRAGEPlayerFactionExtension
         internal static string PlayerRecordId;
         internal static PlayerFactionRuntime Runtime;
         private static bool PlayerFactionPrestigeContext;
+        private static bool CompanionRosterConfigLoaded;
+        private static bool CompanionRosterConfiguredForPlayerFaction;
+        private static int NextCompanionRosterConfigCheckAt;
+        private static int NextPlayerFactionRecruitmentNoticeAt;
         private static string LastPlayerFactionDossierId;
         private static string LastSuppressedPlayerCampSpawnKey;
 
@@ -3638,6 +3682,128 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex)
             {
                 Log.Write("Companion native-social bypass warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
+        private static bool IsCompanionRosterConfiguredForPlayerFaction()
+        {
+            int now = Game.GameTime;
+            if (CompanionRosterConfigLoaded && now < NextCompanionRosterConfigCheckAt)
+                return CompanionRosterConfiguredForPlayerFaction;
+
+            CompanionRosterConfigLoaded = true;
+            NextCompanionRosterConfigCheckAt = now + 1500;
+            CompanionRosterConfiguredForPlayerFaction = false;
+
+            try
+            {
+                string iniPath = Path.Combine(ExtensionPaths.ScriptsDirectory, "EnRAGECompanionsExtension.ini");
+                if (!File.Exists(iniPath))
+                    return false;
+
+                bool found = false;
+                bool configuredForPlayerFaction = false;
+                foreach (string raw in File.ReadAllLines(iniPath))
+                {
+                    string line = raw.Trim();
+                    if (line.Length == 0 || line.StartsWith(";") || line.StartsWith("#"))
+                        continue;
+
+                    int split = line.IndexOf('=');
+                    if (split <= 0)
+                        continue;
+
+                    string key = line.Substring(0, split).Trim();
+                    if (!string.Equals(key, "RecruitRosterId", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string value = line.Substring(split + 1).Trim();
+                    configuredForPlayerFaction = string.Equals(
+                        value, "player_faction", StringComparison.OrdinalIgnoreCase);
+                    found = true;
+                }
+
+                CompanionRosterConfiguredForPlayerFaction = found && configuredForPlayerFaction;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Could not read Companion RecruitRosterId for founding gate: " + Unwrap(ex));
+                CompanionRosterConfiguredForPlayerFaction = false;
+            }
+
+            return CompanionRosterConfiguredForPlayerFaction;
+        }
+
+        private static bool TryBlockCompanionGenericRecruitmentBeforeFounding(object[] args)
+        {
+            if (!IsCompanionRosterConfiguredForPlayerFaction())
+                return false;
+
+            if (Runtime != null && Runtime.IsPlayerFactionReadyForRecruitment)
+                return false;
+
+            try
+            {
+                Type hooks = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => SafeGetType(a, "EnRAGECompanionsExtension.EnRAGEHooks"))
+                    .FirstOrDefault(t => t != null);
+                MethodInfo hidePrompt = hooks != null ? hooks.GetMethod("HideGenericRecruitPrompt", Flags) : null;
+                if (hidePrompt != null && hidePrompt.IsStatic)
+                    hidePrompt.Invoke(null, null);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion recruit-prompt cleanup warning while faction is unfounded: " + Unwrap(ex));
+            }
+
+            int now = Game.GameTime;
+            if (now >= NextPlayerFactionRecruitmentNoticeAt)
+            {
+                NextPlayerFactionRecruitmentNoticeAt = now + 10000;
+                try
+                {
+                    object companion = args != null && args.Length > 0 ? args[0] : null;
+                    MethodInfo showSubtitle = companion == null ? null : companion.GetType().GetMethods(Flags)
+                        .FirstOrDefault(m => m.Name == "ShowSubtitle" && !m.IsStatic &&
+                            m.GetParameters().Length == 1 &&
+                            m.GetParameters()[0].ParameterType == typeof(string));
+                    if (showSubtitle != null)
+                        showSubtitle.Invoke(companion, new object[] {
+                            "Primero debes fundar tu facción en el campamento para poder reclutar miembros."
+                        });
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Companion founding-gate notice warning: " + Unwrap(ex));
+                }
+            }
+
+            return true;
+        }
+
+        internal static bool BlockCompanionGenericRecruitPromptBeforeFoundingPrefix(object[] __args)
+        {
+            try
+            {
+                return !TryBlockCompanionGenericRecruitmentBeforeFounding(__args);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion generic prompt founding-gate warning: " + Unwrap(ex));
+                return true;
+            }
+        }
+
+        internal static bool BlockCompanionGenericRecruitBeforeFoundingPrefix(object[] __args)
+        {
+            try
+            {
+                return !TryBlockCompanionGenericRecruitmentBeforeFounding(__args);
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Companion direct recruitment founding-gate warning: " + Unwrap(ex));
                 return true;
             }
         }
