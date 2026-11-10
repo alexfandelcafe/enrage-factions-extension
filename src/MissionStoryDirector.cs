@@ -288,6 +288,9 @@ namespace EnRAGEPlayerFactionExtension
         internal void Tick()
         {
             MaintainCombatMusic();
+            // Keep mission dialogue from replacing the brief on-screen cinematic skip hint.
+            // Queued lines resume automatically once gameplay controls are restored.
+            if (_cinematicActive) return;
             if (_dialogue.Count == 0 || Game.GameTime < _nextDialogueAt) return;
             string line = _dialogue.Dequeue();
             try
