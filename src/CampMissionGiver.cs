@@ -97,6 +97,7 @@ namespace EnRAGEPlayerFactionExtension
         private int _nextMissionProgressSaveAt;
         private bool _missionTimerInitialized;
         private int _nextStakeoutStatusAt;
+        private bool _rescueReleaseCinematicPending;
         private bool _promptArmed = true;
 
         internal CampMissionGiver(EnRAGEBridge bridge, PlayerFactionData faction)
@@ -235,6 +236,7 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void OnScriptAborted()
         {
+            _rescueReleaseCinematicPending = false;
             SetPromptVisible(false);
             RemovePrompt();
             RemoveCancelPrompt();
@@ -1653,6 +1655,34 @@ namespace EnRAGEPlayerFactionExtension
 
         private void UpdateMissionProgress(Ped player, Vector3 campCentre)
         {
+            if (_rescueReleaseCinematicPending)
+            {
+                // The scout remains at the rescue site until the skippable release scene finishes.
+                // If the camera is skipped, the same safe hand-off happens immediately afterward.
+                if (_faction.MissionStage != 1 || _faction.MissionType != MissionRescuePrisoner)
+                {
+                    _rescueReleaseCinematicPending = false;
+                }
+                else if (_story.IsCinematicActive)
+                {
+                    return;
+                }
+                else
+                {
+                    _rescueReleaseCinematicPending = false;
+                    Ped pendingPrisoner = _objectiveController.CourierPed;
+                    if (pendingPrisoner == null || !pendingPrisoner.Exists() || pendingPrisoner.IsDead)
+                    {
+                        FailActiveMission("El explorador se perdió durante la escena de rescate. El encargo queda cancelado sin recompensa.");
+                    }
+                    else
+                    {
+                        AdvanceMissionToReturn("Has liberado al explorador y asegurado su regreso.");
+                    }
+                    return;
+                }
+            }
+
             if (_faction.MissionStage == 1)
             {
                 Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
@@ -1896,10 +1926,15 @@ namespace EnRAGEPlayerFactionExtension
                         }
                         else if (_objectivePromptJustCompleted && prisoner != null && prisoner.Exists())
                         {
-                            _story.TryStartCinematic(
+                            bool releaseSceneStarted = _story.TryStartCinematic(
                                 MissionCinematicKey("rescue_release", MissionRescuePrisoner, _faction.MissionObjectiveIndex),
                                 player, prisoner.Position, "WORLD_HUMAN_CROUCH_INSPECT", 4000);
                             _story.OnObjectiveInteraction(player, "RESCATE: Cortas las ataduras del explorador y le indicas la ruta de vuelta.");
+                            if (releaseSceneStarted)
+                            {
+                                _rescueReleaseCinematicPending = true;
+                                return;
+                            }
                             AdvanceMissionToReturn("Has liberado al explorador y asegurado su regreso.");
                         }
                     }
@@ -2101,6 +2136,7 @@ namespace EnRAGEPlayerFactionExtension
 
         private void FailActiveMission(string reason)
         {
+            _rescueReleaseCinematicPending = false;
             _story.CancelCinematic();
             RemoveObjectivePrompt();
             RemoveLootPrompt();
