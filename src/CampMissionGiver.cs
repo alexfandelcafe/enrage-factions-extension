@@ -16,6 +16,8 @@ namespace EnRAGEPlayerFactionExtension
     {
         private const BindingFlags Flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         private const int ContextControl = 1980406895;
+        // RDR2 INPUT_RELOAD: a separate contextual action so an active contract can be abandoned.
+        private const int CancelMissionControl = unchecked((int)0xE30CD707);
         private const ulong PromptGetGroupForEntityHash = 0xB796970BD125FCE8UL;
         private const ulong PromptHasHoldModeCompletedHash = 0xE0F65F0640EF0617UL;
         private const ulong PromptHasStandardModeCompletedHash = 0xC92AC953F0A982AEUL;
@@ -55,6 +57,10 @@ namespace EnRAGEPlayerFactionExtension
         private int _stakeoutRadiusBlip;
         private int _prompt;
         private int _promptGroup;
+        private string _promptLabel = string.Empty;
+        private int _cancelPrompt;
+        private int _cancelPromptGroup;
+        private bool _cancelPromptArmed = true;
         private int _lootPrompt;
         private int _lootPromptGroup;
         private int _lootPromptEntityHandle;
@@ -177,7 +183,9 @@ namespace EnRAGEPlayerFactionExtension
             if (interactionBlocked || distanceToPed > 3.2f || player.IsOnMount || player.IsInVehicle)
             {
                 SetPromptVisible(false);
+                SetCancelPromptVisible(false);
                 _promptArmed = true;
+                _cancelPromptArmed = true;
                 return;
             }
             UpdatePrompt();
@@ -187,6 +195,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             SetPromptVisible(false);
             RemovePrompt();
+            RemoveCancelPrompt();
             RemoveLootPrompt();
             RemoveObjectivePrompt();
             RemoveTargetBlip();
@@ -247,7 +256,9 @@ namespace EnRAGEPlayerFactionExtension
         private void DeletePed()
         {
             SetPromptVisible(false);
+            SetCancelPromptVisible(false);
             RemovePrompt();
+            RemoveCancelPrompt();
             try { if (_ped != null && _ped.Exists()) _ped.Delete(); }
             catch (Exception ex) { Log.Write("Mission giver cleanup warning: " + ex.Message); }
             _ped = null;
@@ -284,14 +295,17 @@ namespace EnRAGEPlayerFactionExtension
             try { group = Function.Call<int>(PromptGetGroupForEntityHash, new InputArgument[] { _ped.Handle }); }
             catch (Exception ex) { Log.Write("Mission giver prompt group lookup warning: " + ex.Message); return; }
 
-            if (_prompt == 0 || _promptGroup != group || !PromptValid(_prompt))
+            string desiredLabel = _faction.MissionStage > 0 ? "Consultar el encargo" : "Pedir una misión";
+            if (_prompt == 0 || _promptGroup != group ||
+                !string.Equals(_promptLabel, desiredLabel, StringComparison.Ordinal) || !PromptValid(_prompt))
             {
                 RemovePrompt();
-                if (!TryCreatePrompt(group)) return;
+                if (!TryCreatePrompt(group, desiredLabel)) return;
             }
 
             SetPromptVisible(true);
             ActivatePromptGroup(group);
+            if (UpdateCancelMissionPrompt(group)) return;
             bool completed = PromptCompleted(_prompt);
             if (!completed)
             {
@@ -305,7 +319,7 @@ namespace EnRAGEPlayerFactionExtension
             OnInteract();
         }
 
-        private bool TryCreatePrompt(int group)
+        private bool TryCreatePrompt(int group, string label)
         {
             try
             {
@@ -316,11 +330,12 @@ namespace EnRAGEPlayerFactionExtension
                 if (make == null) return false;
                 Type controlType = make.GetParameters()[0].ParameterType;
                 object control = controlType.IsEnum ? Enum.ToObject(controlType, ContextControl) : (object)ContextControl;
-                _prompt = Convert.ToInt32(make.Invoke(null, new object[] { control, "Pedir una misión", true, group }));
+                _prompt = Convert.ToInt32(make.Invoke(null, new object[] { control, label, true, group }));
                 if (_prompt == 0) return false;
                 _promptGroup = group;
+                _promptLabel = label;
                 _promptArmed = true;
-                Log.Write("Mission giver prompt created. Prompt=" + _prompt + ", group=" + group + ".");
+                Log.Write("Mission giver prompt created. Prompt=" + _prompt + ", group=" + group + ", label=" + label + ".");
                 return true;
             }
             catch (Exception ex) { Log.Write("Mission giver prompt creation failed: " + ex.Message); return false; }
@@ -399,7 +414,95 @@ namespace EnRAGEPlayerFactionExtension
             }
             _prompt = 0;
             _promptGroup = 0;
+            _promptLabel = string.Empty;
             _promptArmed = true;
+        }
+
+        private bool UpdateCancelMissionPrompt(int group)
+        {
+            if (_faction.MissionStage <= 0)
+            {
+                RemoveCancelPrompt();
+                return false;
+            }
+            if (_cancelPrompt == 0 || _cancelPromptGroup != group || !PromptValid(_cancelPrompt))
+            {
+                RemoveCancelPrompt();
+                if (!TryCreateCancelPrompt(group)) return false;
+            }
+            SetCancelPromptVisible(true);
+            bool completed = PromptCompleted(_cancelPrompt);
+            if (!completed)
+            {
+                _cancelPromptArmed = true;
+                return false;
+            }
+            if (!_cancelPromptArmed) return false;
+
+            _cancelPromptArmed = false;
+            SetCancelPromptVisible(false);
+            RemoveCancelPrompt();
+            FailActiveMission("Has abandonado el encargo voluntariamente. No se entregará recompensa.");
+            return true;
+        }
+
+        private bool TryCreateCancelPrompt(int group)
+        {
+            try
+            {
+                Type mainType = _bridge.MainInstance != null ? _bridge.MainInstance.GetType() : null;
+                if (mainType == null) return false;
+                MethodInfo make = mainType.GetMethods(Flags).FirstOrDefault(m =>
+                    m.Name == "MakePrompt" && m.GetParameters().Length == 4);
+                if (make == null) return false;
+                Type controlType = make.GetParameters()[0].ParameterType;
+                object control = controlType.IsEnum
+                    ? Enum.ToObject(controlType, CancelMissionControl)
+                    : (object)CancelMissionControl;
+                _cancelPrompt = Convert.ToInt32(make.Invoke(null,
+                    new object[] { control, "Abandonar encargo", true, group }));
+                if (_cancelPrompt == 0) return false;
+                _cancelPromptGroup = group;
+                _cancelPromptArmed = true;
+                Log.Write("Mission cancellation prompt created. Prompt=" + _cancelPrompt + ", group=" + group + ".");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission cancellation prompt creation warning: " + ex.Message);
+                RemoveCancelPrompt();
+                return false;
+            }
+        }
+
+        private void SetCancelPromptVisible(bool visible)
+        {
+            if (_cancelPrompt == 0) return;
+            try
+            {
+                Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
+                if (hud == null) return;
+                InvokeHud(hud, "_UI_PROMPT_SET_VISIBLE", _cancelPrompt, visible);
+                InvokeHud(hud, "_UI_PROMPT_SET_ENABLED", _cancelPrompt, visible);
+            }
+            catch (Exception ex) { Log.Write("Mission cancellation prompt visibility warning: " + ex.Message); }
+        }
+
+        private void RemoveCancelPrompt()
+        {
+            SetCancelPromptVisible(false);
+            if (_cancelPrompt != 0)
+            {
+                try
+                {
+                    Type hud = typeof(Game).Assembly.GetType("RDR2.Native.HUD", false);
+                    if (hud != null) InvokeHud(hud, "_UI_PROMPT_DELETE", _cancelPrompt);
+                }
+                catch (Exception ex) { Log.Write("Mission cancellation prompt deletion warning: " + ex.Message); }
+            }
+            _cancelPrompt = 0;
+            _cancelPromptGroup = 0;
+            _cancelPromptArmed = true;
         }
 
         private static void InvokeHud(Type hud, string name, params object[] args)
