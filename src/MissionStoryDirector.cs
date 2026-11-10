@@ -49,7 +49,6 @@ namespace EnRAGEPlayerFactionExtension
         private int _cinematicStartedAt;
         private int _cinematicDurationMs;
         private int _cinematicPlayerHandle;
-        private string _activeCinematicKey = string.Empty;
         private Vector3 _cinematicCameraStart;
         private Vector3 _cinematicCameraEnd;
         private Vector3 _cinematicFocusStart;
@@ -88,7 +87,6 @@ namespace EnRAGEPlayerFactionExtension
             _playedCinematics.Add(key);
             if (focus == Vector3.Zero) focus = player.Position;
 
-            _activeCinematicKey = key;
             _cinematicPlayerHandle = player.Handle;
             _cinematicStartedAt = Game.GameTime;
             _cinematicDurationMs = Math.Max(2600, Math.Min(6000, durationMs));
@@ -142,6 +140,18 @@ namespace EnRAGEPlayerFactionExtension
                 Function.Call(RenderScriptCamsHash, new InputArgument[] { true, true, 500, false, true, 0 });
 
                 _cinematicActive = true;
+                PlayFrontendCue("SELECT");
+                const string skipHint = "CINEMÁTICA: pulsa Recargar, Aceptar o Atrás para omitir.";
+                try
+                {
+                    if (!TryDisplaySubtitle(skipHint, 1900) && _notify != null)
+                        _notify(skipHint);
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Mission cinematic skip hint warning: " + ex.Message);
+                }
+
                 if (!string.IsNullOrWhiteSpace(scenario))
                 {
                     try
@@ -254,7 +264,6 @@ namespace EnRAGEPlayerFactionExtension
             _cinematicActive = false;
             _cinematicStartedAt = 0;
             _cinematicDurationMs = 0;
-            _activeCinematicKey = string.Empty;
 
             if (camera != 0)
             {
