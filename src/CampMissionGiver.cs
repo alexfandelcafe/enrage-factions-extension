@@ -123,6 +123,7 @@ namespace EnRAGEPlayerFactionExtension
                 return;
             }
 
+            _story.MaintainCinematic(player);
             if (player == null || !player.Exists() || player.IsDead || !_bridge.IsAvailable)
             {
                 SetPromptVisible(false);
@@ -163,12 +164,17 @@ namespace EnRAGEPlayerFactionExtension
                 DeleteMissionClueProp();
                 SaveFaction();
             }
+            bool suppressMissionGuards = ShouldSuppressMissionEncounterForCinematic(player);
             if (_faction.MissionStage == 1 &&
                 (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionStakeout ||
                  _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy ||
                  _faction.MissionType == MissionEliminateTargets || _faction.MissionType == MissionDestroyTarget ||
                  _faction.MissionType == MissionRescuePrisoner || _faction.MissionType == MissionHuntAnimal))
-                _objectiveController.Maintain(player);
+            {
+                _objectiveController.Maintain(player, suppressMissionGuards);
+                if (suppressMissionGuards)
+                    TryStartMissionSiteCinematic(player);
+            }
 
             _story.Tick();
             if (_faction.MissionStage == 1 && _faction.MissionType == MissionConvoy)
@@ -1530,6 +1536,113 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionCachePropHandle = 0;
         }
 
+        private string MissionCinematicKey(string sceneName, int missionType, int objectiveIndex = -1)
+        {
+            string targetKey = Math.Round(_faction.MissionTargetX).ToString("0", CultureInfo.InvariantCulture) + "_" +
+                Math.Round(_faction.MissionTargetY).ToString("0", CultureInfo.InvariantCulture);
+            string objectiveKey = objectiveIndex >= 0 ? "_" + objectiveIndex.ToString(CultureInfo.InvariantCulture) : string.Empty;
+            return "mission_" + _faction.MissionsCompleted.ToString(CultureInfo.InvariantCulture) +
+                "_type_" + missionType.ToString(CultureInfo.InvariantCulture) + "_" + sceneName +
+                objectiveKey + "_" + targetKey;
+        }
+
+        private static bool IsCinematicPlayerReady(Ped player)
+        {
+            try
+            {
+                return player != null && player.Exists() && !player.IsDead &&
+                    !player.IsOnMount && !player.IsInVehicle && !player.IsInCombat;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool ShouldSuppressMissionEncounterForCinematic(Ped player)
+        {
+            if (_faction.MissionStage != 1) return false;
+            int missionType = _faction.MissionType;
+            bool cinematicEncounter = missionType == MissionConvoy || missionType == MissionEliminateTargets ||
+                missionType == MissionDestroyTarget || missionType == MissionRescuePrisoner ||
+                (missionType == MissionHuntAnimal && _faction.MissionObjectiveIndex >= 2);
+            if (!cinematicEncounter) return false;
+
+            // Once a scene is active, keep initial hostiles deferred until the camera is restored.
+            if (_story.IsCinematicActive) return true;
+            if (!IsCinematicPlayerReady(player)) return false;
+
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            float distance = player.Position.DistanceTo(target);
+            string key = MissionCinematicKey("site_intro", missionType);
+            if (_story.HasPlayedCinematic(key) || _objectiveController.EncounterSpawned) return false;
+
+            switch (missionType)
+            {
+                case MissionConvoy:
+                    return distance <= 115f && !_objectiveController.TargetVehicleSpawnFailed;
+                case MissionEliminateTargets:
+                case MissionRescuePrisoner:
+                    return distance <= 65f;
+                case MissionDestroyTarget:
+                    return distance <= 100f && !_objectiveController.TargetVehicleSpawnFailed;
+                case MissionHuntAnimal:
+                    return distance <= 75f;
+                default:
+                    return false;
+            }
+        }
+
+        private void TryStartMissionSiteCinematic(Ped player)
+        {
+            if (_faction.MissionStage != 1 || _story.IsCinematicActive ||
+                !IsCinematicPlayerReady(player) || _objectiveController.EncounterSpawned)
+                return;
+
+            int missionType = _faction.MissionType;
+            string key = MissionCinematicKey("site_intro", missionType);
+            if (_story.HasPlayedCinematic(key)) return;
+
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            float distance = player.Position.DistanceTo(target);
+            if (distance > 22f) return;
+
+            Vector3 focus = target;
+            string scenario = "WORLD_HUMAN_CROUCH_INSPECT";
+            int duration = 4100;
+            switch (missionType)
+            {
+                case MissionConvoy:
+                    if (!_objectiveController.TargetVehicleAvailable) return;
+                    focus = _objectiveController.TargetVehiclePosition;
+                    duration = 4300;
+                    break;
+                case MissionEliminateTargets:
+                    // A low, cautious look over the hideout before hostiles are released.
+                    duration = 4200;
+                    break;
+                case MissionDestroyTarget:
+                    if (!_objectiveController.TargetVehicleAvailable) return;
+                    focus = _objectiveController.TargetVehiclePosition;
+                    duration = 3900;
+                    break;
+                case MissionRescuePrisoner:
+                    Ped captive = _objectiveController.CourierPed;
+                    if (captive != null && captive.Exists()) focus = captive.Position;
+                    duration = 4400;
+                    break;
+                case MissionHuntAnimal:
+                    // The player examines the last sign and the camera pans beyond it;
+                    // the wolf pack is allowed to spawn after the cinematic ends.
+                    duration = 4600;
+                    break;
+                default:
+                    return;
+            }
+
+            _story.TryStartCinematic(key, player, focus, scenario, duration);
+        }
+
         private void UpdateMissionProgress(Ped player, Vector3 campCentre)
         {
             if (_faction.MissionStage == 1)
@@ -1574,6 +1687,10 @@ namespace EnRAGEPlayerFactionExtension
                     bool pointRecorded = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3;
                     if (distance <= 24f && pointRecorded)
                     {
+                        if (_objectivePromptJustCompleted)
+                            _story.TryStartCinematic(
+                                MissionCinematicKey("patrol_observation", MissionPatrol, _faction.MissionObjectiveIndex),
+                                player, target, "WORLD_HUMAN_WRITE_NOTEBOOK", 3500);
                         if (_faction.MissionObjectiveIndex + 1 < PatrolWaypointCount)
                         {
                             _faction.MissionObjectiveIndex++;
@@ -1771,6 +1888,9 @@ namespace EnRAGEPlayerFactionExtension
                         }
                         else if (_objectivePromptJustCompleted && prisoner != null && prisoner.Exists())
                         {
+                            _story.TryStartCinematic(
+                                MissionCinematicKey("rescue_release", MissionRescuePrisoner, _faction.MissionObjectiveIndex),
+                                player, prisoner.Position, "WORLD_HUMAN_CROUCH_INSPECT", 4000);
                             _story.OnObjectiveInteraction(player, "RESCATE: Cortas las ataduras del explorador y le indicas la ruta de vuelta.");
                             AdvanceMissionToReturn("Has liberado al explorador y asegurado su regreso.");
                         }
@@ -1781,6 +1901,10 @@ namespace EnRAGEPlayerFactionExtension
                     bool clueExamined = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3;
                     if (_faction.MissionObjectiveIndex < 2 && distance <= 24f && clueExamined)
                     {
+                        if (_objectivePromptJustCompleted)
+                            _story.TryStartCinematic(
+                                MissionCinematicKey("wolf_track", MissionHuntAnimal, _faction.MissionObjectiveIndex),
+                                player, target, "WORLD_HUMAN_CROUCH_INSPECT", 3600);
                         _faction.MissionObjectiveIndex++;
                         SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
                         SaveFaction();
@@ -1907,6 +2031,10 @@ namespace EnRAGEPlayerFactionExtension
                 else if (_faction.MissionType == MissionReconnaissance && distance <= 24f &&
                     (_objectivePromptJustCompleted || _cluePropSpawnFailures >= 3))
                 {
+                    if (_objectivePromptJustCompleted)
+                        _story.TryStartCinematic(
+                            MissionCinematicKey("recon_observation", MissionReconnaissance, _faction.MissionObjectiveIndex),
+                            player, target, "WORLD_HUMAN_WRITE_NOTEBOOK", 3700);
                     if (_faction.MissionObjectiveIndex == 0)
                     {
                         _faction.MissionObjectiveIndex = 1;
