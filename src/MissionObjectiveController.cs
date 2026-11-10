@@ -565,6 +565,28 @@ namespace EnRAGEPlayerFactionExtension
                 campCentre != Vector3.Zero && prisoner.Position.DistanceTo(campCentre) <= maxDistance;
         }
 
+        internal bool SettleRescuedPrisonerAtCamp(Vector3 campCentre)
+        {
+            Ped prisoner = ResolveCourier(MissionTarget, 600f);
+            if (prisoner == null || !prisoner.Exists() || prisoner.IsDead ||
+                campCentre == Vector3.Zero || prisoner.Position.DistanceTo(campCentre) > 30f)
+                return false;
+            try
+            {
+                TASK.CLEAR_PED_TASKS(prisoner.Handle, true, false);
+                prisoner.BlockPermanentEvents = false;
+                _faction.MissionCourierPedHandle = 0;
+                SaveFaction();
+                Log.Write("Rescued scout reached camp and was released into ambient behaviour. Handle=" + prisoner.Handle + ".");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Rescued scout camp handoff warning: " + ex.Message);
+                return false;
+            }
+        }
+
         private Vehicle ResolveWagon(Vector3 target, float maxDistance = 35f)
         {
             if (_faction.MissionConvoyWagonHandle == 0 || target == Vector3.Zero) return null;
