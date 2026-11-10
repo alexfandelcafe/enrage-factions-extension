@@ -48,6 +48,10 @@ namespace EnRAGEPlayerFactionExtension
         private Ped _ped;
         private Prop _supplyCache;
         private int _nextCacheSpawnRetryAt;
+        private int _cacheSpawnFailures;
+        private int _nextTargetGroundCheckAt;
+        private int _nextEscortReminderAt;
+        private int _stakeoutRadiusBlip;
         private int _prompt;
         private int _promptGroup;
         private int _lootPrompt;
@@ -106,6 +110,8 @@ namespace EnRAGEPlayerFactionExtension
             if (campCentre == Vector3.Zero)
                 campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (campCentre == Vector3.Zero) return;
+
+            if (_faction.MissionStage == 1) RefineMissionTargetHeight(player);
 
             if (_faction.MissionStage == 1 && _faction.MissionType == MissionSupplyCache)
                 MaintainSupplyCacheProp(player);
@@ -846,6 +852,10 @@ namespace EnRAGEPlayerFactionExtension
                 _faction.LastMissionType, _faction.MissionDifficulty, missionRandom);
             _faction.MissionConvoyWagonHandle = 0;
             _faction.MissionConvoyEnemyHandles.Clear();
+            _cacheSpawnFailures = 0;
+            _nextCacheSpawnRetryAt = 0;
+            _nextTargetGroundCheckAt = 0;
+            _nextEscortReminderAt = 0;
             _faction.MissionEncounterSpawned = false;
             _faction.MissionEncounterProcessId = 0;
             _faction.MissionObjectiveIndex = 0;
@@ -984,6 +994,7 @@ namespace EnRAGEPlayerFactionExtension
             if (Game.GameTime < _nextCacheSpawnRetryAt)
                 return;
             _nextCacheSpawnRetryAt = Game.GameTime + 5000;
+            _cacheSpawnFailures++;
 
             try
             {
@@ -1008,6 +1019,7 @@ namespace EnRAGEPlayerFactionExtension
                 }
 
                 _supplyCache = created;
+                _cacheSpawnFailures = 0;
                 _faction.MissionCachePropHandle = created.Handle;
                 SaveFaction();
                 Log.Write("Independent mission supply cache created. Handle=" + created.Handle + ", position=" + target + ".");
@@ -1052,6 +1064,30 @@ namespace EnRAGEPlayerFactionExtension
             {
                 Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
                 float distance = player.Position.DistanceTo(target);
+
+                if (_faction.MissionType == MissionSupplyCache &&
+                    _cacheSpawnFailures >= 3 && (_supplyCache == null || !_supplyCache.Exists()))
+                {
+                    FailActiveMission("No se pudo colocar el cajón de provisiones después de varios intentos. El encargo queda cancelado.");
+                    return;
+                }
+                if ((_faction.MissionType == MissionCourier || _faction.MissionType == MissionRescuePrisoner) &&
+                    _objectiveController.CourierSpawnFailed && !_objectiveController.CourierAvailable)
+                {
+                    FailActiveMission(_faction.MissionType == MissionRescuePrisoner
+                        ? "No se pudo localizar al explorador retenido después de varios intentos. El encargo queda cancelado."
+                        : "El contacto no pudo aparecer en el punto de entrega. El encargo queda cancelado.");
+                    return;
+                }
+                bool requiresEnemyGroup = _faction.MissionType == MissionSupplyCache ||
+                    _faction.MissionType == MissionConvoy || _faction.MissionType == MissionEliminateTargets ||
+                    _faction.MissionType == MissionDestroyTarget || _faction.MissionType == MissionRescuePrisoner ||
+                    _faction.MissionType == MissionHuntAnimal;
+                if (requiresEnemyGroup && _objectiveController.EncounterSpawnFailed)
+                {
+                    FailActiveMission("No se pudo generar un grupo enemigo válido después de varios intentos. El encargo queda cancelado sin recompensa.");
+                    return;
+                }
 
                 if (_faction.MissionType == MissionPatrol)
                 {
@@ -1335,7 +1371,8 @@ namespace EnRAGEPlayerFactionExtension
                     // Complete after 18 seconds if no encounter could be created, or after
                     // the spawned attackers have been eliminated.
                     if (_faction.MissionWaitProgressMs >= StakeoutDurationMs &&
-                        (!_objectiveController.EncounterSpawned || _objectiveController.AllGuardsDefeated()))
+                        (_objectiveController.EncounterSpawnFailed ||
+                         (_objectiveController.EncounterSpawned && _objectiveController.AllGuardsDefeated())))
                         AdvanceMissionToReturn(
                             "Has vigilado el cruce durante " + (StakeoutDurationMs / 1000) +
                             " segundos y confirmado quién utiliza la ruta.");
@@ -1366,8 +1403,33 @@ namespace EnRAGEPlayerFactionExtension
 
             if (_faction.MissionStage == 2 && player.Position.DistanceTo(campCentre) <= 14f)
             {
-                _faction.MissionStage = 3; // Persist a claim state before paying to avoid repeated per-tick rewards.
-                SaveFaction();
+                if (_faction.MissionType == MissionRescuePrisoner)
+                {
+                    Ped prisoner = _objectiveController.RescuedPrisoner;
+                    if (prisoner == null || !prisoner.Exists() || prisoner.IsDead)
+                    {
+                        FailActiveMission("El explorador se perdió o murió durante el regreso. El encargo queda cancelado sin recompensa.");
+                        return;
+                    }
+                    if (!_objectiveController.RescuedPrisonerReachedCamp(campCentre))
+                    {
+                        if (Game.GameTime >= _nextEscortReminderAt)
+                        {
+                            _nextEscortReminderAt = Game.GameTime + 6000;
+                            _story.ShowMissionStatus("El explorador todavía te sigue. Espera a que llegue al campamento para cerrar el rescate.", 3200);
+                        }
+                    }
+                    else if (_objectiveController.SettleRescuedPrisonerAtCamp(campCentre))
+                    {
+                        _faction.MissionStage = 3;
+                        SaveFaction();
+                    }
+                }
+                else
+                {
+                    _faction.MissionStage = 3; // Persist a claim state before paying to avoid repeated per-tick rewards.
+                    SaveFaction();
+                }
             }
 
             if (_faction.MissionStage == 3 && Game.GameTime >= _nextRewardRetryAt)
@@ -1390,6 +1452,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionTargetZ = 0f;
             _missionTimerInitialized = false;
             _lastMissionProgressTickAt = 0;
+            _cacheSpawnFailures = 0;
             SaveFaction();
             RemoveTargetBlip();
             _story.ShowMissionStatus("ENCARGO FALLIDO: " + reason, 4500);
@@ -1401,8 +1464,15 @@ namespace EnRAGEPlayerFactionExtension
             RemoveObjectivePrompt();
             if (_faction.MissionType == MissionSupplyCache)
                 DeleteSupplyCacheProp();
+            bool preserveRescuedPrisoner = _faction.MissionType == MissionRescuePrisoner;
+            if (preserveRescuedPrisoner &&
+                !_objectiveController.ReleaseRescuedPrisoner(Game.Player != null ? Game.Player.Character : null))
+            {
+                FailActiveMission("No se pudo liberar al explorador de forma segura. El encargo queda cancelado sin recompensa.");
+                return;
+            }
             _story.OnMissionReturning(_faction.MissionType, message);
-            _objectiveController.CleanupConvoy();
+            _objectiveController.CleanupConvoy(preserveRescuedPrisoner);
             _faction.MissionStage = 2;
             _faction.MissionObjectiveReady = false;
             _faction.MissionWaitProgressMs = 0;
@@ -1445,6 +1515,7 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionTargetX = 0f;
             _faction.MissionTargetY = 0f;
             _faction.MissionTargetZ = 0f;
+            _cacheSpawnFailures = 0;
             SaveFaction();
             RemoveTargetBlip();
             string completionSummary = "El trabajo está hecho. La banda recibe " + suppliesReward +
@@ -1458,7 +1529,11 @@ namespace EnRAGEPlayerFactionExtension
         private void EnsureTargetBlip()
         {
             if (_faction.MissionStage <= 0) return;
-            if (_targetBlip != 0 && MAP.DOES_BLIP_EXIST(_targetBlip)) return;
+            if (_targetBlip != 0 && MAP.DOES_BLIP_EXIST(_targetBlip))
+            {
+                EnsureStakeoutRadiusBlip();
+                return;
+            }
             RemoveTargetBlip();
 
             Vector3 campCentre = _bridge.GetPlayerCampCentre(_faction);
@@ -1479,6 +1554,43 @@ namespace EnRAGEPlayerFactionExtension
                 }
             }
             catch (Exception ex) { Log.Write("Mission objective blip creation failed: " + ex.Message); }
+            EnsureStakeoutRadiusBlip();
+        }
+
+        private void EnsureStakeoutRadiusBlip()
+        {
+            if (_faction.MissionStage != 1 || _faction.MissionType != MissionStakeout)
+            {
+                RemoveStakeoutRadiusBlip();
+                return;
+            }
+            if (_stakeoutRadiusBlip != 0 && MAP.DOES_BLIP_EXIST(_stakeoutRadiusBlip)) return;
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            try
+            {
+                // Native BLIP_ADD_FOR_RADIUS draws the actual timed-hold perimeter on the map.
+                _stakeoutRadiusBlip = MAP.BLIP_ADD_FOR_RADIUS(NativeMapBlipStyle,
+                    target.X, target.Y, target.Z, StakeoutRadius);
+                if (_stakeoutRadiusBlip == 0 || !MAP.DOES_BLIP_EXIST(_stakeoutRadiusBlip))
+                    _stakeoutRadiusBlip = 0;
+            }
+            catch (Exception ex)
+            {
+                _stakeoutRadiusBlip = 0;
+                Log.Write("Stakeout perimeter blip creation warning: " + ex.Message);
+            }
+        }
+
+        private unsafe void RemoveStakeoutRadiusBlip()
+        {
+            int handle = _stakeoutRadiusBlip;
+            _stakeoutRadiusBlip = 0;
+            if (handle == 0) return;
+            try
+            {
+                if (MAP.DOES_BLIP_EXIST(handle)) MAP.REMOVE_BLIP(&handle);
+            }
+            catch (Exception ex) { Log.Write("Stakeout perimeter blip cleanup warning: " + ex.Message); }
         }
 
         private void SetBlipName(int handle, string name)
@@ -1501,6 +1613,7 @@ namespace EnRAGEPlayerFactionExtension
 
         private unsafe void RemoveTargetBlip()
         {
+            RemoveStakeoutRadiusBlip();
             if (_targetBlip == 0) return;
             try
             {
@@ -1533,6 +1646,31 @@ namespace EnRAGEPlayerFactionExtension
             }
             catch (Exception ex) { Log.Write("Mission notification warning: " + ex.Message); }
             Log.Write("MISSION: " + message);
+        }
+
+        private unsafe void RefineMissionTargetHeight(Ped player)
+        {
+            if (player == null || !player.Exists() || _faction.MissionStage != 1 ||
+                Game.GameTime < _nextTargetGroundCheckAt) return;
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            if (target == Vector3.Zero || player.Position.DistanceTo(target) > 180f) return;
+            _nextTargetGroundCheckAt = Game.GameTime + 2000;
+            try
+            {
+                STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
+                float groundZ = 0f;
+                if (!MISC.GET_GROUND_Z_FOR_3D_COORD(target.X, target.Y, target.Z + 50f, &groundZ, false))
+                    return;
+                if (Math.Abs(groundZ - target.Z) > 55f) return;
+                float correctedZ = groundZ + 0.25f;
+                if (Math.Abs(correctedZ - target.Z) < 0.75f) return;
+                _faction.MissionTargetZ = correctedZ;
+                SaveFaction();
+                RemoveTargetBlip();
+                EnsureTargetBlip();
+                Log.Write("Mission target height corrected after local terrain collision loaded: " + correctedZ + ".");
+            }
+            catch (Exception ex) { Log.Write("Mission target ground refinement warning: " + ex.Message); }
         }
 
         private void SaveFaction()
