@@ -45,7 +45,6 @@ namespace EnRAGEPlayerFactionExtension
         private string _activeMusicStopEvent = CombatMusicStop;
         private readonly HashSet<string> _playedCinematics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _cinematicActive;
-        private bool _cinematicScenarioStarted;
         private bool _cinematicScenarioPending;
         private string _cinematicScenario = string.Empty;
         private int _cinematicScenarioStartAt;
@@ -243,7 +242,6 @@ namespace EnRAGEPlayerFactionExtension
                         TASK.CLEAR_PED_TASKS(player.Handle, true, false);
                         TASK.TASK_START_SCENARIO_IN_PLACE_HASH(player.Handle,
                             MISC.GET_HASH_KEY(scenario), -1, true, 0U, -1f, false);
-                        _cinematicScenarioStarted = true;
                     }
                     catch (Exception ex)
                     {
@@ -301,7 +299,6 @@ namespace EnRAGEPlayerFactionExtension
         {
             int camera = _cinematicCamera;
             _cinematicCamera = 0;
-            _cinematicScenarioStarted = false;
             _cinematicScenarioPending = false;
             _cinematicScenario = string.Empty;
             _cinematicScenarioStartAt = 0;
