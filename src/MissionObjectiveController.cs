@@ -68,6 +68,35 @@ namespace EnRAGEPlayerFactionExtension
         }
         internal bool TargetVehicleSpawnFailed { get { return _vehicleSpawnFailures >= 3; } }
 
+        internal void ReconcileProcessScopedHandles()
+        {
+            int processId = Process.GetCurrentProcess().Id;
+            if (_faction.MissionEncounterProcessId == processId ||
+                (_faction.MissionEncounterProcessId == 0 && !HasMissionRuntimeHandles()))
+                return;
+
+            // A different process cannot safely reuse saved game entity handles. Reset only the
+            // transient world entities; the mission stage/objective progress itself remains persisted.
+            RemoveAllEnemyBlips();
+            _faction.MissionConvoyWagonHandle = 0;
+            _faction.MissionConvoyDriverPedHandle = 0;
+            _faction.MissionCourierPedHandle = 0;
+            _faction.MissionCachePropHandle = 0;
+            _faction.MissionCluePropHandle = 0;
+            if (_faction.MissionScenePropHandles != null) _faction.MissionScenePropHandles.Clear();
+            if (_faction.MissionConvoyEnemyHandles == null)
+                _faction.MissionConvoyEnemyHandles = new List<int>();
+            else
+                _faction.MissionConvoyEnemyHandles.Clear();
+            _faction.MissionEncounterSpawned = false;
+            _faction.MissionEncounterProcessId = 0;
+            _spawnFailures = 0;
+            _vehicleSpawnFailures = 0;
+            _courierSpawnFailures = 0;
+            _convoyDriverSpawnFailures = 0;
+            SaveFaction();
+        }
+
         internal void Maintain(Ped player)
         {
             if (player == null || !player.Exists() || _faction.MissionStage != 1) return;
@@ -78,31 +107,7 @@ namespace EnRAGEPlayerFactionExtension
             int missionType = _faction.MissionType;
             float distance = player.Position.DistanceTo(target);
 
-            // All dynamic mission entities are scoped to the running game process. Reconcile them
-            // before early returns (notably the delivery-contact contract) can reuse stale handles.
-            int processId = Process.GetCurrentProcess().Id;
-            if (_faction.MissionEncounterProcessId != processId &&
-                (_faction.MissionEncounterProcessId != 0 || HasMissionRuntimeHandles()))
-            {
-                RemoveAllEnemyBlips();
-                _faction.MissionConvoyWagonHandle = 0;
-                _faction.MissionConvoyDriverPedHandle = 0;
-                _faction.MissionCourierPedHandle = 0;
-                _faction.MissionCachePropHandle = 0;
-                _faction.MissionCluePropHandle = 0;
-                if (_faction.MissionScenePropHandles != null) _faction.MissionScenePropHandles.Clear();
-                if (_faction.MissionConvoyEnemyHandles == null)
-                    _faction.MissionConvoyEnemyHandles = new List<int>();
-                else
-                    _faction.MissionConvoyEnemyHandles.Clear();
-                _faction.MissionEncounterSpawned = false;
-                _faction.MissionEncounterProcessId = 0;
-                _spawnFailures = 0;
-                _vehicleSpawnFailures = 0;
-                _courierSpawnFailures = 0;
-                _convoyDriverSpawnFailures = 0;
-                SaveFaction();
-            }
+            ReconcileProcessScopedHandles();
 
             if (missionType == MissionCourier || missionType == MissionRescuePrisoner)
             {
