@@ -298,6 +298,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 foreach (int handle in _faction.MissionConvoyEnemyHandles)
                 {
+                    if (handle == _faction.MissionConvoyDriverPedHandle) continue;
                     Ped guard = ResolveGuard(handle, target);
                     try { if (guard != null && guard.Exists()) guard.Delete(); }
                     catch (Exception ex) { Log.Write("Convoy guard cleanup warning: " + ex.Message); }
@@ -449,8 +450,13 @@ namespace EnRAGEPlayerFactionExtension
                     created.BlockPermanentEvents = true;
                     created.Accuracy = 15;
                     _faction.MissionConvoyDriverPedHandle = created.Handle;
+                    if (_faction.MissionConvoyEnemyHandles == null)
+                        _faction.MissionConvoyEnemyHandles = new List<int>();
+                    if (!_faction.MissionConvoyEnemyHandles.Contains(created.Handle))
+                        _faction.MissionConvoyEnemyHandles.Add(created.Handle);
                     _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                     driver = created;
+                    EnsureEnemyBlip(created);
                     SaveFaction();
                     Log.Write("Moving convoy driver spawned. Handle=" + created.Handle + ", wagon=" + wagon.Handle + ".");
                 }
