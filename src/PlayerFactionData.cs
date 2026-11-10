@@ -82,8 +82,15 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 49)] public int LastMissionType { get; set; }
         [DataMember(Order = 50)] public bool MissionEncounterSpawned { get; set; }
         [DataMember(Order = 51)] public int MissionEncounterProcessId { get; set; }
-        // Process-scoped handover contact used by the courier contract; validated by model and target distance.
+        // Process-scoped handover contact used by courier/rescue contracts; validated by model and position.
         [DataMember(Order = 52)] public int MissionCourierPedHandle { get; set; }
+        // Receipt and small write-ahead journal for idempotent mission resource awards across script reloads.
+        [DataMember(Order = 54)] public string LastAppliedMissionRewardId { get; set; }
+        [DataMember(Order = 55)] public string PendingMissionRewardId { get; set; }
+        [DataMember(Order = 56)] public int PendingMissionRewardSuppliesBefore { get; set; }
+        [DataMember(Order = 57)] public int PendingMissionRewardTreasuryBefore { get; set; }
+        [DataMember(Order = 58)] public int PendingMissionRewardSuppliesAfter { get; set; }
+        [DataMember(Order = 59)] public int PendingMissionRewardTreasuryAfter { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -130,6 +137,17 @@ namespace EnRAGEPlayerFactionExtension
                         data.LastMissionType = -1;
                     if (data.SchemaVersion < 17)
                         data.MissionCourierPedHandle = 0;
+                    if (data.SchemaVersion < 18)
+                    {
+                        data.LastAppliedMissionRewardId = string.Empty;
+                        data.PendingMissionRewardId = string.Empty;
+                        data.PendingMissionRewardSuppliesBefore = 0;
+                        data.PendingMissionRewardTreasuryBefore = 0;
+                        data.PendingMissionRewardSuppliesAfter = 0;
+                        data.PendingMissionRewardTreasuryAfter = 0;
+                    }
+                    if (data.LastAppliedMissionRewardId == null) data.LastAppliedMissionRewardId = string.Empty;
+                    if (data.PendingMissionRewardId == null) data.PendingMissionRewardId = string.Empty;
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -139,7 +157,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(17, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(18, data.SchemaVersion);
                     return data;
                 }
             }
@@ -196,7 +214,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 17,
+                SchemaVersion = 18,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -227,6 +245,12 @@ namespace EnRAGEPlayerFactionExtension
                 MissionEncounterSpawned = false,
                 MissionEncounterProcessId = 0,
                 MissionCourierPedHandle = 0,
+                LastAppliedMissionRewardId = string.Empty,
+                PendingMissionRewardId = string.Empty,
+                PendingMissionRewardSuppliesBefore = 0,
+                PendingMissionRewardTreasuryBefore = 0,
+                PendingMissionRewardSuppliesAfter = 0,
+                PendingMissionRewardTreasuryAfter = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
