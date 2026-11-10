@@ -108,6 +108,7 @@ namespace EnRAGEPlayerFactionExtension
             float distance = player.Position.DistanceTo(target);
 
             ReconcileProcessScopedHandles();
+            int processId = Process.GetCurrentProcess().Id;
 
             if (missionType == MissionCourier || missionType == MissionRescuePrisoner)
             {
