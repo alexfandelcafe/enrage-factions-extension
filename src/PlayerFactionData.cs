@@ -94,6 +94,8 @@ namespace EnRAGEPlayerFactionExtension
         // Heading captured from a validated road node for roadside convoy/sabotage objectives.
         [DataMember(Order = 60)] public float MissionTargetHeading { get; set; }
         [DataMember(Order = 61)] public bool MissionTargetHasRoadNode { get; set; }
+        // Visible/interactive map prop for reconnaissance, patrol and wolf-tracking clues.
+        [DataMember(Order = 62)] public int MissionCluePropHandle { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -156,6 +158,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.MissionTargetHeading = 0f;
                         data.MissionTargetHasRoadNode = false;
                     }
+                    if (data.SchemaVersion < 20) data.MissionCluePropHandle = 0;
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -165,7 +168,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(19, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(20, data.SchemaVersion);
                     return data;
                 }
             }
@@ -222,7 +225,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 19,
+                SchemaVersion = 20,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -261,6 +264,7 @@ namespace EnRAGEPlayerFactionExtension
                 PendingMissionRewardTreasuryAfter = 0,
                 MissionTargetHeading = 0f,
                 MissionTargetHasRoadNode = false,
+                MissionCluePropHandle = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
