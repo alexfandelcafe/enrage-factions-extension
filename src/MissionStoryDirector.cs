@@ -61,6 +61,12 @@ namespace EnRAGEPlayerFactionExtension
             return !string.IsNullOrWhiteSpace(key) && _playedCinematics.Contains(key);
         }
 
+        internal void MarkCinematicUnavailable(string key)
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+                _playedCinematics.Add(key);
+        }
+
         internal MissionStoryDirector(Action<string> notify)
         {
             _notify = notify;
