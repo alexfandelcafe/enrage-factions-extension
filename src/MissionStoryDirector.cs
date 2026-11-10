@@ -17,6 +17,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong PrepareMusicEventHash = 0x1E5185B72EF5158AUL;
         private const ulong TriggerMusicEventHash = 0x706D57B0F50DA710UL;
         private const ulong TurnPedToFaceEntityHash = 0x5AD23D40115353ACUL;
+        private const ulong TurnPedToFaceCoordHash = 0x1DDA930A0AC38571UL;
         // RDR2 NativeDB CAM/PAD hashes: these are kept isolated from the mission state machine.
         private const ulong CreateCamHash = 0xE72CDBA7F0A02DD6UL;
         private const ulong RenderScriptCamsHash = 0x33281167E4942E4FUL;
@@ -49,6 +50,7 @@ namespace EnRAGEPlayerFactionExtension
         private int _cinematicStartedAt;
         private int _cinematicDurationMs;
         private int _cinematicPlayerHandle;
+        private string _activeCinematicKey = string.Empty;
         private Vector3 _cinematicCameraStart;
         private Vector3 _cinematicCameraEnd;
         private Vector3 _cinematicFocusStart;
@@ -95,6 +97,7 @@ namespace EnRAGEPlayerFactionExtension
             _playedCinematics.Add(key);
             if (focus == Vector3.Zero) focus = player.Position;
 
+            _activeCinematicKey = key;
             _cinematicPlayerHandle = player.Handle;
             _cinematicStartedAt = Game.GameTime;
             _cinematicDurationMs = Math.Max(2600, Math.Min(6000, durationMs));
@@ -268,6 +271,9 @@ namespace EnRAGEPlayerFactionExtension
             bool clearScenario = _cinematicScenarioStarted;
             _cinematicScenarioStarted = false;
             int playerHandle = _cinematicPlayerHandle;
+            string completedKey = _activeCinematicKey;
+            Vector3 completedLookAt = _cinematicFocusEnd;
+            _activeCinematicKey = string.Empty;
             _cinematicPlayerHandle = 0;
             _cinematicActive = false;
             _cinematicStartedAt = 0;
@@ -287,7 +293,18 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     Ped player = Game.Player != null ? Game.Player.Character : null;
                     if (player != null && player.Exists() && player.Handle == playerHandle)
+                    {
                         TASK.CLEAR_PED_TASKS(player.Handle, true, false);
+                        if (completedKey.IndexOf("_site_intro_", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                            !player.IsDead)
+                        {
+                            // After the shot, the character naturally faces the area being surveyed.
+                            Function.Call(TurnPedToFaceCoordHash, new InputArgument[]
+                            {
+                                player.Handle, completedLookAt.X, completedLookAt.Y, completedLookAt.Z, 900
+                            });
+                        }
+                    }
                 }
                 catch (Exception ex) { Log.Write("Mission cinematic task cleanup warning: " + ex.Message); }
             }
