@@ -240,13 +240,7 @@ Tras cerrar completamente el juego, los handles temporales se descartan porque R
 
 Al llegar, cada miembro intenta usar un punto de escenario cercano a un objeto del `CampKit`: asientos, camas u otros puntos que enRAGE haya registrado para el campamento. Los puntos elegidos se reservan y se comprueba si otro miembro o el administrador ya está usando un punto cercano. Esto reduce que varios NPCs se acumulen en el mismo lugar.
 
-Si no hay un punto utilizable, se intenta una actividad alternativa de pie o sentado. La lista incluye, entre otras:
-
-- Esperar de pie, mirar alrededor o adoptar una postura relajada.
-- Sentarse en el suelo, descansar, fumar o tomar café.
-- Tocar guitarra, leer, dibujar o escribir.
-- Apoyarse en una pared, beber, martillar, usar una armónica o pescar.
-- Sentarse en sillas, bancos o junto al fuego.
+Si no hay un punto utilizable, se intenta una actividad alternativa de pie o sentado, pero la lista de reserva se limita a escenarios que pueden iniciarse con seguridad en la posición actual del NPC. No se asigna pesca lejos del agua ni escenarios que requieren una silla, banco, repisa o punto de fogata concreto. Las sillas y los bancos se intentan mediante los puntos de escenario nativos próximos a los objetos del `CampKit`; si no hay un punto válido, el NPC usa una alternativa sencilla de pie o sentado en el suelo.
 
 Cuando un escenario termina, el miembro busca de nuevo un punto libre. Si un punto no puede utilizarse, se prueba otro en lugar de insistir indefinidamente en el mismo.
 
