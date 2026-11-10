@@ -112,6 +112,7 @@ namespace EnRAGEPlayerFactionExtension
         {
             if (!_faction.Founded || string.IsNullOrWhiteSpace(_faction.CampSiteId))
             {
+                _rescueReleaseCinematicPending = false;
                 DeleteSupplyCacheProp();
                 DeleteMissionClueProp();
                 CleanupMissionSceneProps();
