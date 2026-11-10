@@ -1688,8 +1688,21 @@ namespace EnRAGEPlayerFactionExtension
                         currentTreasury == data.PendingMissionRewardTreasuryAfter;
                     if (nativeAlreadyAtTarget)
                     {
+                        // The in-memory dictionaries may reflect an award whose earlier SaveWorld
+                        // failed. Retry the world save before writing the receipt that suppresses re-award.
+                        try { saveWorld.Invoke(MainInstance, null); }
+                        catch (Exception ex)
+                        {
+                            error = "La recompensa ya figura en memoria, pero SaveWorld sigue fallando: " + Unwrap(ex);
+                            Log.Write("Mission reward remains pending until the native world save succeeds: " + error);
+                            return false;
+                        }
                         data.LastAppliedMissionRewardId = missionRewardId;
                         data.PendingMissionRewardId = string.Empty;
+                        data.PendingMissionRewardSuppliesBefore = 0;
+                        data.PendingMissionRewardTreasuryBefore = 0;
+                        data.PendingMissionRewardSuppliesAfter = 0;
+                        data.PendingMissionRewardTreasuryAfter = 0;
                         data.CurrentSupplies = currentSupplies;
                         data.CurrentTreasury = currentTreasury;
                         data.ResourcesInitialized = true;
