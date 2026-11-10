@@ -18,7 +18,7 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong TriggerMusicEventHash = 0x706D57B0F50DA710UL;
         private const ulong TurnPedToFaceEntityHash = 0x5AD23D40115353ACUL;
         private const ulong TurnPedToFaceCoordHash = 0x1DDA930A0AC38571UL;
-        // RDR2 NativeDB CAM/PAD hashes: these are kept isolated from the mission state machine.
+        // RDR2 NativeDB camera, input, and task hashes are isolated from the mission state machine.
         private const ulong CreateCamHash = 0xE72CDBA7F0A02DD6UL;
         private const ulong RenderScriptCamsHash = 0x33281167E4942E4FUL;
         private const ulong DestroyCamHash = 0x4E67E0B6D7FD5145UL;
@@ -156,14 +156,19 @@ namespace EnRAGEPlayerFactionExtension
                 _cinematicActive = true;
                 PlayFrontendCue("SELECT");
                 const string skipHint = "CINEMÁTICA: pulsa Recargar, Aceptar o Atrás para omitir.";
+                bool skipHintShown = false;
                 try
                 {
-                    if (!TryDisplaySubtitle(skipHint, 1900) && _notify != null)
-                        _notify(skipHint);
+                    skipHintShown = TryDisplaySubtitle(skipHint, 1900);
                 }
                 catch (Exception ex)
                 {
-                    Log.Write("Mission cinematic skip hint warning: " + ex.Message);
+                    Log.Write("Mission cinematic subtitle hint warning: " + ex.Message);
+                }
+                if (!skipHintShown && _notify != null)
+                {
+                    try { _notify(skipHint); }
+                    catch (Exception ex) { Log.Write("Mission cinematic notification hint warning: " + ex.Message); }
                 }
 
                 if (!string.IsNullOrWhiteSpace(scenario))
