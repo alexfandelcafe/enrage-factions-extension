@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -52,6 +53,14 @@ namespace EnRAGEPlayerFactionExtension
         private Prop _supplyCache;
         private int _nextCacheSpawnRetryAt;
         private int _cacheSpawnFailures;
+        private static readonly string[] MissionScenePropModels =
+        {
+            "p_tent_leento01x", "p_crate03x", "p_woodpile01x"
+        };
+        private readonly int[] _scenePropSpawnFailures = new int[3];
+        private readonly int[] _nextScenePropSpawnRetryAt = new int[3];
+        private Vector3 _scenePropTargetPosition;
+        private int _scenePropMissionType = -1;
         private Prop _missionClueProp;
         private Vector3 _clueTargetPosition;
         private int _cluePropMissionType = -1;
@@ -136,6 +145,14 @@ namespace EnRAGEPlayerFactionExtension
 
             if (IsCurrentMissionCluePoint())
                 MaintainMissionClueProp(player);
+            if (NeedsMissionSceneProps())
+                MaintainMissionSceneProps(player);
+            else if ((_faction.MissionScenePropHandles != null && _faction.MissionScenePropHandles.Count > 0) ||
+                     _scenePropMissionType >= 0)
+            {
+                CleanupMissionSceneProps();
+                SaveFaction();
+            }
             else if (_missionClueProp != null || _faction.MissionCluePropHandle != 0)
             {
                 DeleteMissionClueProp();
@@ -1106,6 +1123,7 @@ namespace EnRAGEPlayerFactionExtension
             RemoveLootPrompt();
             RemoveObjectivePrompt();
             _objectiveController.CleanupConvoy();
+            CleanupMissionSceneProps();
             if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
             Random missionRandom = new Random(unchecked(Game.GameTime * 397 ^ _faction.MissionsCompleted * 7919 ^ _faction.MissionPrestige));
             _faction.MissionDifficulty = MissionCatalog.DetermineDifficulty(_faction.MissionsCompleted, missionRandom);
@@ -1338,6 +1356,135 @@ namespace EnRAGEPlayerFactionExtension
             catch (Exception ex)
             {
                 Log.Write("Supply-cache prop spawn warning: " + ex.Message);
+            }
+        }
+
+        private bool NeedsMissionSceneProps()
+        {
+            return _faction.MissionStage == 1 &&
+                (_faction.MissionType == MissionEliminateTargets || _faction.MissionType == MissionRescuePrisoner);
+        }
+
+        private void MaintainMissionSceneProps(Ped player)
+        {
+            if (player == null || !player.Exists()) return;
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            if (target == Vector3.Zero) return;
+
+            if (_scenePropMissionType < 0 && _faction.MissionScenePropHandles != null &&
+                _faction.MissionScenePropHandles.Count > 0)
+            {
+                // On script reload, validate the persisted handles against this mission's location.
+                _scenePropMissionType = _faction.MissionType;
+                _scenePropTargetPosition = target;
+            }
+            else if (_scenePropMissionType != _faction.MissionType ||
+                (_scenePropTargetPosition != Vector3.Zero && _scenePropTargetPosition.DistanceTo(target) > 0.5f))
+            {
+                CleanupMissionSceneProps();
+                _scenePropMissionType = _faction.MissionType;
+                _scenePropTargetPosition = target;
+            }
+
+            if (player.Position.DistanceTo(target) > 110f) return;
+            if (_faction.MissionScenePropHandles == null)
+                _faction.MissionScenePropHandles = new List<int>();
+            while (_faction.MissionScenePropHandles.Count < MissionScenePropModels.Length)
+                _faction.MissionScenePropHandles.Add(0);
+
+            double baseAngle = (_faction.MissionsCompleted + 1) * 0.81 + _faction.MissionType * 0.43;
+            for (int slot = 0; slot < MissionScenePropModels.Length; slot++)
+            {
+                int handle = _faction.MissionScenePropHandles[slot];
+                if (handle != 0)
+                {
+                    try
+                    {
+                        Prop existing = new Prop(handle);
+                        if (existing.Exists() &&
+                            unchecked((uint)existing.Model.Hash) == MISC.GET_HASH_KEY(MissionScenePropModels[slot]) &&
+                            existing.Position.DistanceTo(target) <= 25f)
+                            continue;
+                    }
+                    catch { }
+                    _faction.MissionScenePropHandles[slot] = 0;
+                    SaveFaction();
+                }
+
+                if (_scenePropSpawnFailures[slot] >= 3 ||
+                    Game.GameTime < _nextScenePropSpawnRetryAt[slot]) continue;
+                _nextScenePropSpawnRetryAt[slot] = Game.GameTime + 2500;
+                try
+                {
+                    Model model = new Model(MissionScenePropModels[slot]);
+                    if (!model.IsValid || (!model.IsLoaded && !model.Request(1000)))
+                    {
+                        _scenePropSpawnFailures[slot]++;
+                        Log.Write("Mission scene prop model unavailable: " + MissionScenePropModels[slot] +
+                            " (attempt " + _scenePropSpawnFailures[slot] + ").");
+                        continue;
+                    }
+
+                    double angle = baseAngle + slot * (Math.PI * 2.0 / MissionScenePropModels.Length);
+                    float radius = 5.0f + slot * 1.2f;
+                    Vector3 position = new Vector3(target.X + (float)Math.Cos(angle) * radius,
+                        target.Y + (float)Math.Sin(angle) * radius, target.Z + 0.1f);
+                    STREAMING.REQUEST_COLLISION_AT_COORD(position.X, position.Y, position.Z);
+                    Prop created = World.CreateProp(model, position, false, true);
+                    if (created == null || !created.Exists())
+                    {
+                        _scenePropSpawnFailures[slot]++;
+                        Log.Write("Mission scene prop spawn failed: " + MissionScenePropModels[slot] +
+                            " (attempt " + _scenePropSpawnFailures[slot] + ").");
+                        continue;
+                    }
+                    ENTITY.SET_ENTITY_AS_MISSION_ENTITY(created.Handle, true, true);
+                    _faction.MissionScenePropHandles[slot] = created.Handle;
+                    _scenePropSpawnFailures[slot] = 0;
+                    SaveFaction();
+                    Log.Write("Mission site prop spawned: " + MissionScenePropModels[slot] +
+                        " near target for mission " + _faction.MissionType + ".");
+                }
+                catch (Exception ex)
+                {
+                    _scenePropSpawnFailures[slot]++;
+                    Log.Write("Mission scene prop spawn warning for " + MissionScenePropModels[slot] +
+                        ": " + ex.Message);
+                }
+            }
+        }
+
+        private void CleanupMissionSceneProps()
+        {
+            if (_faction.MissionScenePropHandles == null)
+                _faction.MissionScenePropHandles = new List<int>();
+            Vector3 expectedPosition = _scenePropTargetPosition != Vector3.Zero
+                ? _scenePropTargetPosition
+                : new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            for (int slot = 0; slot < _faction.MissionScenePropHandles.Count; slot++)
+            {
+                int handle = _faction.MissionScenePropHandles[slot];
+                if (handle != 0)
+                {
+                    try
+                    {
+                        Prop candidate = new Prop(handle);
+                        if (candidate.Exists() && expectedPosition != Vector3.Zero &&
+                            slot < MissionScenePropModels.Length &&
+                            unchecked((uint)candidate.Model.Hash) == MISC.GET_HASH_KEY(MissionScenePropModels[slot]) &&
+                            candidate.Position.DistanceTo(expectedPosition) <= 25f)
+                            candidate.Delete();
+                    }
+                    catch (Exception ex) { Log.Write("Mission scene prop cleanup warning: " + ex.Message); }
+                }
+                _faction.MissionScenePropHandles[slot] = 0;
+            }
+            _scenePropTargetPosition = Vector3.Zero;
+            _scenePropMissionType = -1;
+            for (int i = 0; i < _scenePropSpawnFailures.Length; i++)
+            {
+                _scenePropSpawnFailures[i] = 0;
+                _nextScenePropSpawnRetryAt[i] = 0;
             }
         }
 
@@ -1787,6 +1934,8 @@ namespace EnRAGEPlayerFactionExtension
             RemoveObjectivePrompt();
             RemoveLootPrompt();
             _objectiveController.CleanupConvoy();
+            CleanupMissionSceneProps();
+            DeleteMissionClueProp();
             DeleteSupplyCacheProp();
             _faction.MissionStage = 0;
             _faction.MissionType = MissionReconnaissance;
@@ -1810,6 +1959,8 @@ namespace EnRAGEPlayerFactionExtension
             RemoveObjectivePrompt();
             if (_faction.MissionType == MissionSupplyCache)
                 DeleteSupplyCacheProp();
+            CleanupMissionSceneProps();
+            DeleteMissionClueProp();
             bool preserveRescuedPrisoner = _faction.MissionType == MissionRescuePrisoner;
             if (preserveRescuedPrisoner &&
                 !_objectiveController.ReleaseRescuedPrisoner(Game.Player != null ? Game.Player.Character : null))
@@ -1847,6 +1998,8 @@ namespace EnRAGEPlayerFactionExtension
 
             string completedName = GetMissionTitle(_faction.MissionType);
             RemoveObjectivePrompt();
+            CleanupMissionSceneProps();
+            DeleteMissionClueProp();
             if (_faction.MissionType == MissionSupplyCache)
                 DeleteSupplyCacheProp();
             if (_faction.MissionType == MissionConvoy)
