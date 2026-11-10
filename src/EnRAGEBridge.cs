@@ -881,7 +881,15 @@ namespace EnRAGEPlayerFactionExtension
                     bool healthy = inspected && trackedProps > 0 &&
                         liveProps > 0 && liveProps * 2 >= trackedProps;
                     if (healthy)
+                    {
+                        Vector3 seatCentre = GetPlayerCampCentre(data);
+                        if (seatCentre == Vector3.Zero) seatCentre = position;
+                        int correctedSeats = OrientPlayerCampSeatProps(kit, data.CampSiteId, seatCentre);
+                        if (correctedSeats > 0)
+                            Log.Write("Corrected camp-chair orientation for " + data.CampSiteId +
+                                " (" + correctedSeats + " seat props turned toward the fire).");
                         return true;
+                    }
 
                     // CampKit.Has only checks its dictionary key. Spawn inserts that key before
                     // trying to place any props, so a failed placement can look successful forever.
@@ -936,6 +944,12 @@ namespace EnRAGEPlayerFactionExtension
                     Log.Write("CampKit spawn incomplete for " + data.CampSiteId + ": " + error);
                     return false;
                 }
+                Vector3 spawnedSeatCentre = GetPlayerCampCentre(data);
+                if (spawnedSeatCentre == Vector3.Zero) spawnedSeatCentre = position;
+                int alignedSeats = OrientPlayerCampSeatProps(kit, data.CampSiteId, spawnedSeatCentre);
+                if (alignedSeats > 0)
+                    Log.Write("Aligned camp seating toward the fire for " + data.CampSiteId +
+                        " (" + alignedSeats + " seat props turned).");
                 Log.Write("Native CampKit spawned physical camp props for " + data.CampSiteId +
                     " near the player (live=" + liveAfterSpawn + ").");
                 return true;
@@ -978,6 +992,69 @@ namespace EnRAGEPlayerFactionExtension
                 Log.Write("CampKit object integrity check warning: " + Unwrap(ex));
                 return false;
             }
+        }
+
+        private int OrientPlayerCampSeatProps(object kit, string siteId, Vector3 centre)
+        {
+            if (kit == null || string.IsNullOrWhiteSpace(siteId) || centre == Vector3.Zero)
+                return 0;
+
+            int corrected = 0;
+            try
+            {
+                IDictionary kits = GetField(kit, "_kits") as IDictionary;
+                if (kits == null || !kits.Contains(siteId)) return 0;
+                IEnumerable handles = kits[siteId] as IEnumerable;
+                if (handles == null) return 0;
+
+                HashSet<uint> seatModels = new HashSet<uint>(new[]
+                {
+                    MISC.GET_HASH_KEY("p_log02x"),
+                    MISC.GET_HASH_KEY("p_stool01x"),
+                    MISC.GET_HASH_KEY("p_woodenchair01x"),
+                    MISC.GET_HASH_KEY("p_chair05x"),
+                    MISC.GET_HASH_KEY("p_bench_log01x")
+                });
+
+                foreach (object rawHandle in handles)
+                {
+                    int handle;
+                    try { handle = Convert.ToInt32(rawHandle); }
+                    catch { continue; }
+                    if (handle == 0 || !ENTITY.DOES_ENTITY_EXIST(handle)) continue;
+
+                    Prop seat;
+                    try { seat = new Prop(handle); }
+                    catch { continue; }
+                    if (seat == null || !seat.Exists()) continue;
+
+                    uint modelHash;
+                    try { modelHash = unchecked((uint)seat.Model.Hash); }
+                    catch { continue; }
+                    if (!seatModels.Contains(modelHash)) continue;
+
+                    Vector3 at = seat.Position;
+                    // CampKit.Plan's Facing() points these chair models' backs toward the fire.
+                    // Add 180 degrees to that native heading. Calculate an absolute heading so
+                    // repeated integrity checks do not keep turning the chairs back and forth.
+                    float heading = (float)(Math.Atan2(at.X - centre.X, centre.Y - at.Y) * 180.0 / Math.PI + 180.0);
+                    heading %= 360f;
+                    if (heading < 0f) heading += 360f;
+
+                    float current = ENTITY.GET_ENTITY_HEADING(handle);
+                    float difference = Math.Abs(current - heading);
+                    if (difference > 180f) difference = 360f - difference;
+                    if (difference <= 2.0f) continue;
+
+                    ENTITY.SET_ENTITY_HEADING(handle, heading);
+                    corrected++;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Camp seat orientation correction warning: " + Unwrap(ex));
+            }
+            return corrected;
         }
 
         private void ClearCampKitFailedPieceCache(object kit)
