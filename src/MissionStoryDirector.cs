@@ -46,6 +46,9 @@ namespace EnRAGEPlayerFactionExtension
         private readonly HashSet<string> _playedCinematics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _cinematicActive;
         private bool _cinematicScenarioStarted;
+        private bool _cinematicScenarioPending;
+        private string _cinematicScenario = string.Empty;
+        private int _cinematicScenarioStartAt;
         private int _cinematicCamera;
         private int _cinematicStartedAt;
         private int _cinematicDurationMs;
@@ -165,17 +168,22 @@ namespace EnRAGEPlayerFactionExtension
 
                 if (!string.IsNullOrWhiteSpace(scenario))
                 {
+                    _cinematicScenario = scenario;
+                    _cinematicScenarioPending = true;
+                    _cinematicScenarioStartAt = Game.GameTime + 850;
                     try
                     {
                         TASK.CLEAR_PED_TASKS(player.Handle, true, false);
-                        TASK.TASK_START_SCENARIO_IN_PLACE_HASH(player.Handle,
-                            MISC.GET_HASH_KEY(scenario), -1, true, 0U, -1f, false);
-                        _cinematicScenarioStarted = true;
+                        Function.Call(TurnPedToFaceCoordHash, new InputArgument[]
+                        {
+                            player.Handle, focus.X, focus.Y, focus.Z, 750
+                        });
                     }
                     catch (Exception ex)
                     {
-                        // The camera-only version is still valid when a scenario is unavailable.
-                        Log.Write("Mission cinematic scenario warning (" + scenario + "): " + ex.Message);
+                        // The camera-only version remains valid when the contextual turn cannot run.
+                        Log.Write("Mission cinematic facing-task warning: " + ex.Message);
+                        _cinematicScenarioStartAt = Game.GameTime;
                     }
                 }
 
@@ -215,8 +223,28 @@ namespace EnRAGEPlayerFactionExtension
                 int elapsed = Game.GameTime - _cinematicStartedAt;
                 if (skip || elapsed >= _cinematicDurationMs)
                 {
-                    CleanupCinematic(true);
+                    CleanupCinematic(true, !skip);
                     return;
+                }
+
+                if (_cinematicScenarioPending && Game.GameTime >= _cinematicScenarioStartAt)
+                {
+                    string scenario = _cinematicScenario;
+                    _cinematicScenarioPending = false;
+                    _cinematicScenario = string.Empty;
+                    _cinematicScenarioStartAt = 0;
+                    try
+                    {
+                        TASK.CLEAR_PED_TASKS(player.Handle, true, false);
+                        TASK.TASK_START_SCENARIO_IN_PLACE_HASH(player.Handle,
+                            MISC.GET_HASH_KEY(scenario), -1, true, 0U, -1f, false);
+                        _cinematicScenarioStarted = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        // The camera-only version is still valid when a scenario is unavailable.
+                        Log.Write("Mission cinematic scenario warning (" + scenario + "): " + ex.Message);
+                    }
                 }
 
                 float progress = Math.Max(0f, Math.Min(1f, elapsed / (float)_cinematicDurationMs));
@@ -264,12 +292,14 @@ namespace EnRAGEPlayerFactionExtension
                 from.Z + (to.Z - from.Z) * amount);
         }
 
-        private void CleanupCinematic(bool clearPlayerTask)
+        private void CleanupCinematic(bool clearPlayerTask, bool orientToSite = false)
         {
             int camera = _cinematicCamera;
             _cinematicCamera = 0;
-            bool clearScenario = _cinematicScenarioStarted;
             _cinematicScenarioStarted = false;
+            _cinematicScenarioPending = false;
+            _cinematicScenario = string.Empty;
+            _cinematicScenarioStartAt = 0;
             int playerHandle = _cinematicPlayerHandle;
             string completedKey = _activeCinematicKey;
             Vector3 completedLookAt = _cinematicFocusEnd;
@@ -287,15 +317,17 @@ namespace EnRAGEPlayerFactionExtension
                 try { Function.Call(DestroyCamHash, new InputArgument[] { camera, false }); } catch { }
             }
 
-            if (clearPlayerTask && clearScenario && playerHandle != 0)
+            if (clearPlayerTask && playerHandle != 0)
             {
                 try
                 {
                     Ped player = Game.Player != null ? Game.Player.Character : null;
                     if (player != null && player.Exists() && player.Handle == playerHandle)
                     {
+                        // Clear either the initial turn task or a scenario that has already started.
                         TASK.CLEAR_PED_TASKS(player.Handle, true, false);
-                        if (completedKey.IndexOf("_site_intro_", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        if (orientToSite &&
+                            completedKey.IndexOf("_site_intro_", StringComparison.OrdinalIgnoreCase) >= 0 &&
                             !player.IsDead)
                         {
                             // After the shot, the character naturally faces the area being surveyed.
