@@ -1181,7 +1181,9 @@ namespace EnRAGEPlayerFactionExtension
                     {
                         if (_objectiveController.IsWagonDestroyedOrMissing())
                         {
-                            AdvanceMissionToReturn("Los escoltas han sido neutralizados y la carreta está destruida o no se encuentra. El convoy queda fuera de servicio; regresa al campamento.");
+                            AdvanceMissionToReturn(_objectiveController.EncounterHadLostTargets
+                                ? "La carreta del convoy ha quedado fuera de servicio. Algunos escoltas se perdieron de vista; regresa al campamento."
+                                : "Los escoltas han sido neutralizados y la carreta está destruida o no se encuentra. El convoy queda fuera de servicio; regresa al campamento.");
                         }
                         else if (!_faction.MissionObjectiveReady)
                         {
@@ -1266,7 +1268,9 @@ namespace EnRAGEPlayerFactionExtension
                         _story.OnEncounterStarted(_faction.MissionType);
                     }
                     if (distance <= 65f && _objectiveController.AllGuardsDefeated())
-                        AdvanceMissionToReturn("Has despejado el escondite y eliminado a los hombres que lo ocupaban.");
+                        AdvanceMissionToReturn(_objectiveController.EncounterHadLostTargets
+                            ? "Has despejado el escondite; algunos de sus ocupantes desaparecieron de la zona."
+                            : "Has despejado el escondite y eliminado a los hombres que lo ocupaban.");
                     else if (distance <= 65f && _objectiveController.EncounterSpawnFailed &&
                         !_objectiveController.EncounterSpawned)
                         FailActiveMission("No se pudo establecer contacto con los ocupantes del escondite. El encargo queda cancelado.");
@@ -1292,7 +1296,9 @@ namespace EnRAGEPlayerFactionExtension
                     else if (distance <= 70f && guardsClear)
                     {
                         if (_faction.MissionConvoyWagonHandle != 0 && _objectiveController.IsWagonDestroyedOrMissing())
-                            AdvanceMissionToReturn("Los escoltas han caído y el carro de suministros ha quedado destruido o ha desaparecido.");
+                            AdvanceMissionToReturn(_objectiveController.EncounterHadLostTargets
+                                ? "El carro de suministros está fuera de servicio. Algunos escoltas se perdieron de vista."
+                                : "Los escoltas han caído y el carro de suministros ha quedado destruido o ha desaparecido.");
                         else if (_objectiveController.TargetVehicleSpawnFailed)
                             AdvanceMissionToReturn("El carro no pudo llegar a la zona. Has neutralizado a sus escoltas y evitado que entreguen los suministros.");
                         else if (_objectiveController.TargetVehicleAvailable && !_faction.MissionObjectiveReady)
@@ -1323,7 +1329,7 @@ namespace EnRAGEPlayerFactionExtension
                         Ped prisoner = _objectiveController.CourierPed;
                         if (prisoner != null && prisoner.Exists() && prisoner.IsDead)
                         {
-                            FailActiveMission("Los captores han caído, pero el explorador no sobrevivió. El encargo queda cancelado.");
+                            FailActiveMission("El explorador no sobrevivió al enfrentamiento. El encargo queda cancelado.");
                         }
                         else if (prisoner != null && prisoner.Exists() && !_faction.MissionObjectiveReady)
                         {
