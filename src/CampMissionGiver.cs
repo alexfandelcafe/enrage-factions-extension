@@ -149,7 +149,8 @@ namespace EnRAGEPlayerFactionExtension
                 MaintainMissionClueProp(player);
             if (NeedsMissionSceneProps())
                 MaintainMissionSceneProps(player);
-            else if ((_faction.MissionScenePropHandles != null && _faction.MissionScenePropHandles.Count > 0) ||
+            else if ((_faction.MissionScenePropHandles != null &&
+                      _faction.MissionScenePropHandles.Any(handle => handle != 0)) ||
                      _scenePropMissionType >= 0)
             {
                 CleanupMissionSceneProps();
