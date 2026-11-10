@@ -90,6 +90,9 @@ namespace EnRAGEPlayerFactionExtension
                 missionType == MissionRescuePrisoner || missionType == MissionHuntAnimal;
             if (!supportedCombatMission) return;
 
+            // Hunting is a three-stage contract: do not spawn the pack until both clues are found.
+            if (missionType == MissionHuntAnimal && _faction.MissionObjectiveIndex < 2) return;
+
             float triggerDistance = missionType == MissionConvoy ? 115f :
                 (missionType == MissionDestroyTarget ? 100f :
                 (missionType == MissionStakeout ? 40f :
