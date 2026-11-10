@@ -946,7 +946,7 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 Vector3 spawnedSeatCentre = GetPlayerCampCentre(data);
                 if (spawnedSeatCentre == Vector3.Zero) spawnedSeatCentre = position;
-                int alignedSeats = OrientPlayerCampSeatProps(kit, data.CampSiteId, spawnedSeatCentre);
+                int alignedSeats = OrientPlayerCampPropsTowardFire(kit, data.CampSiteId, spawnedSeatCentre);
                 if (alignedSeats > 0)
                     Log.Write("Aligned camp seating/tents toward the fire for " + data.CampSiteId +
                         " (" + alignedSeats + " props turned).");
@@ -994,7 +994,7 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        private int OrientPlayerCampSeatProps(object kit, string siteId, Vector3 centre)
+        private int OrientPlayerCampPropsTowardFire(object kit, string siteId, Vector3 centre)
         {
             if (kit == null || string.IsNullOrWhiteSpace(siteId) || centre == Vector3.Zero)
                 return 0;
