@@ -1605,7 +1605,6 @@ namespace EnRAGEPlayerFactionExtension
 
             Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
             float distance = player.Position.DistanceTo(target);
-            if (distance > 22f) return;
 
             Vector3 focus = target;
             string scenario = "WORLD_HUMAN_CROUCH_INSPECT";
@@ -1615,23 +1614,32 @@ namespace EnRAGEPlayerFactionExtension
                 case MissionConvoy:
                     if (!_objectiveController.TargetVehicleAvailable) return;
                     focus = _objectiveController.TargetVehiclePosition;
+                    // The convoy wagon may be staged behind the road node; trigger on the
+                    // actual wagon distance rather than the marker distance.
+                    if (player.Position.DistanceTo(focus) > 24f) return;
+                    scenario = "WORLD_HUMAN_WRITE_NOTEBOOK";
                     duration = 4300;
                     break;
                 case MissionEliminateTargets:
+                    if (distance > 22f) return;
                     // A low, cautious look over the hideout before hostiles are released.
                     duration = 4200;
                     break;
                 case MissionDestroyTarget:
                     if (!_objectiveController.TargetVehicleAvailable) return;
                     focus = _objectiveController.TargetVehiclePosition;
+                    if (distance > 22f || player.Position.DistanceTo(focus) > 26f) return;
+                    scenario = "WORLD_HUMAN_WRITE_NOTEBOOK";
                     duration = 3900;
                     break;
                 case MissionRescuePrisoner:
+                    if (distance > 22f) return;
                     Ped captive = _objectiveController.CourierPed;
                     if (captive != null && captive.Exists()) focus = captive.Position;
                     duration = 4400;
                     break;
                 case MissionHuntAnimal:
+                    if (distance > 22f) return;
                     // The player examines the last sign and the camera pans beyond it;
                     // the wolf pack is allowed to spawn after the cinematic ends.
                     duration = 4600;
@@ -2093,6 +2101,7 @@ namespace EnRAGEPlayerFactionExtension
 
         private void FailActiveMission(string reason)
         {
+            _story.CancelCinematic();
             RemoveObjectivePrompt();
             RemoveLootPrompt();
             _objectiveController.CleanupConvoy();
