@@ -183,6 +183,7 @@ namespace EnRAGEPlayerFactionExtension
                 case 3:
                     return new[] {
                         "ENCARGADO: Necesito que vigiles el cruce. Quédate en posición y averigua quién utiliza el camino.",
+                        "ENCARGADO: Objetivo opcional: no salgas del perímetro durante la vigilancia para conseguir una bonificación del 15%.",
                         "ENCARGADO: Si te descubren, no abandones el terreno sin resolver la amenaza.",
                         "ENCARGADO: " + qualifier
                     };
@@ -195,6 +196,7 @@ namespace EnRAGEPlayerFactionExtension
                 case 5:
                     return new[] {
                         "ENCARGADO: Un convoy lleva suministros que necesitamos. Localízalo y despeja la ruta antes de acercarte a la carga.",
+                        "ENCARGADO: Objetivo opcional: conserva la carreta y el cargamento en buen estado para obtener una bonificación del 15%.",
                         "ENCARGADO: Si la carreta termina destruida, recoge lo que puedas de la zona y no te quedes allí.",
                         "ENCARGADO: " + qualifier
                     };
