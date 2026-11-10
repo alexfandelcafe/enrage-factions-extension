@@ -67,6 +67,11 @@ namespace EnRAGEPlayerFactionExtension
             _notify = notify;
         }
 
+        internal void CancelCinematic()
+        {
+            CleanupCinematic(true);
+        }
+
         /// <summary>
         /// Starts a short, skippable in-world cinematic. It is deliberately non-blocking:
         /// mission progress continues through the existing state machine while the camera runs.
@@ -290,6 +295,8 @@ namespace EnRAGEPlayerFactionExtension
 
         internal void BeginMission(int missionType, int difficulty, Ped missionGiver, Ped player)
         {
+            CleanupCinematic(true);
+            _playedCinematics.Clear();
             PlayFrontendCue("SELECT");
             FaceEachOther(missionGiver, player);
             QueueDialogue(GetOpeningLines(missionType, difficulty));
