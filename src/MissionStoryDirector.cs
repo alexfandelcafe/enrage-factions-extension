@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using RDR2;
+using RDR2.Math;
 using RDR2.Native;
 
 namespace EnRAGEPlayerFactionExtension
@@ -16,6 +17,19 @@ namespace EnRAGEPlayerFactionExtension
         private const ulong PrepareMusicEventHash = 0x1E5185B72EF5158AUL;
         private const ulong TriggerMusicEventHash = 0x706D57B0F50DA710UL;
         private const ulong TurnPedToFaceEntityHash = 0x5AD23D40115353ACUL;
+        // RDR2 NativeDB CAM/PAD hashes: these are kept isolated from the mission state machine.
+        private const ulong CreateCamHash = 0xE72CDBA7F0A02DD6UL;
+        private const ulong RenderScriptCamsHash = 0x33281167E4942E4FUL;
+        private const ulong DestroyCamHash = 0x4E67E0B6D7FD5145UL;
+        private const ulong SetCamActiveHash = 0x87295BCA613800C8UL;
+        private const ulong SetCamCoordHash = 0xF9EE7D419EE49DE6UL;
+        private const ulong PointCamAtCoordHash = 0x948B39341C3A40C2UL;
+        private const ulong SetCamFovHash = 0x27666E5988D9D429UL;
+        private const ulong DisableAllControlActionsHash = 0x5F4B6931816E599BUL;
+        private const ulong IsDisabledControlJustPressedHash = 0x91AEF906BCA88877UL;
+        private const int CinematicSkipReloadControl = unchecked((int)0xE30CD707);
+        private const int CinematicSkipAcceptControl = unchecked((int)0xC7B5340A);
+        private const int CinematicSkipCancelControl = unchecked((int)0x156F7119);
         private const string CombatMusicStart = "DUEL_GENERAL_START";
         private const string CombatMusicStop = "DUEL_GENERAL_STOP";
         private const string CombatMusicEndStinger = "DUEL_GENERAL_END_OS";
@@ -28,10 +42,233 @@ namespace EnRAGEPlayerFactionExtension
         private bool _combatMusicRequested;
         private int _nextMusicRetryAt;
         private string _activeMusicStopEvent = CombatMusicStop;
+        private readonly HashSet<string> _playedCinematics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private bool _cinematicActive;
+        private bool _cinematicScenarioStarted;
+        private int _cinematicCamera;
+        private int _cinematicStartedAt;
+        private int _cinematicDurationMs;
+        private int _cinematicPlayerHandle;
+        private string _activeCinematicKey = string.Empty;
+        private Vector3 _cinematicCameraStart;
+        private Vector3 _cinematicCameraEnd;
+        private Vector3 _cinematicFocusStart;
+        private Vector3 _cinematicFocusEnd;
+
+        internal bool IsCinematicActive { get { return _cinematicActive; } }
+
+        internal bool HasPlayedCinematic(string key)
+        {
+            return !string.IsNullOrWhiteSpace(key) && _playedCinematics.Contains(key);
+        }
 
         internal MissionStoryDirector(Action<string> notify)
         {
             _notify = notify;
+        }
+
+        /// <summary>
+        /// Starts a short, skippable in-world cinematic. It is deliberately non-blocking:
+        /// mission progress continues through the existing state machine while the camera runs.
+        /// If the player is mounted, in combat, or camera creation fails, callers can continue
+        /// with the ordinary mission flow instead of holding the encounter.
+        /// </summary>
+        internal bool TryStartCinematic(string key, Ped player, Vector3 focus, string scenario, int durationMs)
+        {
+            if (string.IsNullOrWhiteSpace(key) || _cinematicActive || _playedCinematics.Contains(key))
+                return false;
+            if (!CanStartCinematic(player))
+                return false;
+
+            _playedCinematics.Add(key);
+            if (focus == Vector3.Zero) focus = player.Position;
+
+            _activeCinematicKey = key;
+            _cinematicPlayerHandle = player.Handle;
+            _cinematicStartedAt = Game.GameTime;
+            _cinematicDurationMs = Math.Max(2600, Math.Min(6000, durationMs));
+
+            Vector3 playerPosition = player.Position;
+            float directionX = focus.X - playerPosition.X;
+            float directionY = focus.Y - playerPosition.Y;
+            float directionLength = (float)Math.Sqrt(directionX * directionX + directionY * directionY);
+            if (directionLength < 0.05f)
+            {
+                directionX = 0f;
+                directionY = 1f;
+                directionLength = 1f;
+            }
+            directionX /= directionLength;
+            directionY /= directionLength;
+            float sideX = -directionY;
+            float sideY = directionX;
+
+            _cinematicCameraStart = new Vector3(
+                playerPosition.X - directionX * 3.6f + sideX * 2.0f,
+                playerPosition.Y - directionY * 3.6f + sideY * 2.0f,
+                playerPosition.Z + 1.65f);
+            _cinematicCameraEnd = new Vector3(
+                playerPosition.X - directionX * 2.0f - sideX * 4.1f,
+                playerPosition.Y - directionY * 2.0f - sideY * 4.1f,
+                playerPosition.Z + 2.05f);
+            _cinematicFocusStart = new Vector3(focus.X, focus.Y, focus.Z + 0.45f);
+            _cinematicFocusEnd = new Vector3(
+                focus.X + directionX * 11f,
+                focus.Y + directionY * 11f,
+                focus.Z + 1.0f);
+
+            try
+            {
+                _cinematicCamera = Function.Call<int>(CreateCamHash,
+                    new InputArgument[] { "DEFAULT_SCRIPTED_CAMERA", true });
+                if (_cinematicCamera == 0)
+                    throw new InvalidOperationException("CREATE_CAM returned an invalid camera handle.");
+
+                Function.Call(SetCamCoordHash, new InputArgument[]
+                {
+                    _cinematicCamera, _cinematicCameraStart.X, _cinematicCameraStart.Y, _cinematicCameraStart.Z
+                });
+                Function.Call(PointCamAtCoordHash, new InputArgument[]
+                {
+                    _cinematicCamera, _cinematicFocusStart.X, _cinematicFocusStart.Y, _cinematicFocusStart.Z
+                });
+                Function.Call(SetCamFovHash, new InputArgument[] { _cinematicCamera, 43f });
+                Function.Call(SetCamActiveHash, new InputArgument[] { _cinematicCamera, true });
+                Function.Call(RenderScriptCamsHash, new InputArgument[] { true, true, 500, false, true, 0 });
+
+                _cinematicActive = true;
+                if (!string.IsNullOrWhiteSpace(scenario))
+                {
+                    try
+                    {
+                        TASK.CLEAR_PED_TASKS(player.Handle, true, false);
+                        TASK.TASK_START_SCENARIO_IN_PLACE_HASH(player.Handle,
+                            MISC.GET_HASH_KEY(scenario), -1, true, 0U, -1f, false);
+                        _cinematicScenarioStarted = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        // The camera-only version is still valid when a scenario is unavailable.
+                        Log.Write("Mission cinematic scenario warning (" + scenario + "): " + ex.Message);
+                    }
+                }
+
+                Log.Write("Mission cinematic started: " + key + ", scenario=" +
+                    (string.IsNullOrWhiteSpace(scenario) ? "(camera only)" : scenario) + ".");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission cinematic could not start (" + key + "): " + ex.Message);
+                CleanupCinematic(false);
+                return false;
+            }
+        }
+
+        internal void MaintainCinematic(Ped player)
+        {
+            if (!_cinematicActive) return;
+            try
+            {
+                if (player == null || !player.Exists() || player.Handle != _cinematicPlayerHandle || player.IsDead)
+                {
+                    CleanupCinematic(true);
+                    return;
+                }
+
+                // Controls are disabled for this frame only; the player can skip with Reload,
+                // Accept, or Cancel. A script reload/death also has a dedicated cleanup path.
+                Function.Call(DisableAllControlActionsHash, new InputArgument[] { 0 });
+                bool skip = Function.Call<bool>(IsDisabledControlJustPressedHash,
+                    new InputArgument[] { 0, CinematicSkipReloadControl }) ||
+                    Function.Call<bool>(IsDisabledControlJustPressedHash,
+                    new InputArgument[] { 0, CinematicSkipAcceptControl }) ||
+                    Function.Call<bool>(IsDisabledControlJustPressedHash,
+                    new InputArgument[] { 0, CinematicSkipCancelControl });
+
+                int elapsed = Game.GameTime - _cinematicStartedAt;
+                if (skip || elapsed >= _cinematicDurationMs)
+                {
+                    CleanupCinematic(true);
+                    return;
+                }
+
+                float progress = Math.Max(0f, Math.Min(1f, elapsed / (float)_cinematicDurationMs));
+                // Smoothstep avoids abrupt changes when the camera begins and ends its pan.
+                float eased = progress * progress * (3f - 2f * progress);
+                Vector3 camera = Lerp(_cinematicCameraStart, _cinematicCameraEnd, eased);
+                Vector3 focus = Lerp(_cinematicFocusStart, _cinematicFocusEnd, eased);
+                if (_cinematicCamera != 0)
+                {
+                    Function.Call(SetCamCoordHash, new InputArgument[]
+                    {
+                        _cinematicCamera, camera.X, camera.Y, camera.Z
+                    });
+                    Function.Call(PointCamAtCoordHash, new InputArgument[]
+                    {
+                        _cinematicCamera, focus.X, focus.Y, focus.Z
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission cinematic tick warning; restoring gameplay: " + ex.Message);
+                CleanupCinematic(true);
+            }
+        }
+
+        private static bool CanStartCinematic(Ped player)
+        {
+            try
+            {
+                return player != null && player.Exists() && !player.IsDead &&
+                    !player.IsOnMount && !player.IsInVehicle && !player.IsInCombat;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static Vector3 Lerp(Vector3 from, Vector3 to, float amount)
+        {
+            return new Vector3(
+                from.X + (to.X - from.X) * amount,
+                from.Y + (to.Y - from.Y) * amount,
+                from.Z + (to.Z - from.Z) * amount);
+        }
+
+        private void CleanupCinematic(bool clearPlayerTask)
+        {
+            int camera = _cinematicCamera;
+            _cinematicCamera = 0;
+            bool clearScenario = _cinematicScenarioStarted;
+            _cinematicScenarioStarted = false;
+            int playerHandle = _cinematicPlayerHandle;
+            _cinematicPlayerHandle = 0;
+            _cinematicActive = false;
+            _cinematicStartedAt = 0;
+            _cinematicDurationMs = 0;
+            _activeCinematicKey = string.Empty;
+
+            if (camera != 0)
+            {
+                try { Function.Call(RenderScriptCamsHash, new InputArgument[] { false, true, 500, false, false, 0 }); }
+                catch (Exception ex) { Log.Write("Mission cinematic camera blend-out warning: " + ex.Message); }
+                try { Function.Call(SetCamActiveHash, new InputArgument[] { camera, false }); } catch { }
+                try { Function.Call(DestroyCamHash, new InputArgument[] { camera, false }); } catch { }
+            }
+
+            if (clearPlayerTask && clearScenario && playerHandle != 0)
+            {
+                try
+                {
+                    Ped player = Game.Player != null ? Game.Player.Character : null;
+                    if (player != null && player.Exists() && player.Handle == playerHandle)
+                        TASK.CLEAR_PED_TASKS(player.Handle, true, false);
+                }
+                catch (Exception ex) { Log.Write("Mission cinematic task cleanup warning: " + ex.Message); }
+            }
         }
 
         internal void Tick()
@@ -145,6 +382,7 @@ namespace EnRAGEPlayerFactionExtension
         internal void OnScriptAborted()
         {
             _dialogue.Clear();
+            CleanupCinematic(true);
             StopCombatMusic(false);
             _combatMusicRequested = false;
         }
