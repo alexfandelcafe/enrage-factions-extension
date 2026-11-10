@@ -2449,10 +2449,7 @@ namespace EnRAGEPlayerFactionExtension
                     "WORLD_HUMAN_LEAN_BACK_WALL_SMOKING",
                     "WORLD_HUMAN_GUARD_LEAN_WALL_MALE_E",
                     "WORLD_HUMAN_BADASS",
-                    "WORLD_HUMAN_HANG_OUT_STREET",
-                    "WORLD_HUMAN_HAMMERING",
                     "WORLD_HUMAN_DRINKING",
-                    "WORLD_HUMAN_READ_NEWSPAPER",
                     "WORLD_HUMAN_WRITE_NOTEBOOK"
                 });
                 for (int i = member.FallbackScenarioOrder.Count - 1; i > 0; i--)
