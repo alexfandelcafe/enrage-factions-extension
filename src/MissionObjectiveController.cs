@@ -431,14 +431,14 @@ namespace EnRAGEPlayerFactionExtension
                 }
             }
 
-            if (driver == null || !driver.Exists() || driver.IsDead) return;
-            if (Game.GameTime < _nextConvoyDriverTaskAt) return;
-            _nextConvoyDriverTaskAt = Game.GameTime + 2500;
+            if (driver == null || !driver.Exists() || driver.IsDead ||
+                Game.GameTime < _nextConvoyDriverTaskAt) return;
             try
             {
                 bool seated = PED.IS_PED_IN_VEHICLE(driver.Handle, wagon.Handle, false);
                 if (!seated)
                 {
+                    _nextConvoyDriverTaskAt = Game.GameTime + 2500;
                     Function.Call(TaskEnterVehicleHash, new InputArgument[]
                     {
                         driver.Handle, wagon.Handle, 10000, -1, 1.0f, 1, 0
@@ -451,6 +451,7 @@ namespace EnRAGEPlayerFactionExtension
                     target.X + (float)Math.Cos(roadAngle) * 16f,
                     target.Y + (float)Math.Sin(roadAngle) * 16f,
                     target.Z);
+                _nextConvoyDriverTaskAt = Game.GameTime + 8500;
                 if (wagon.Position.DistanceTo(destination) > 9f)
                 {
                     Function.Call(TaskVehicleDriveToCoordHash, new InputArgument[]
