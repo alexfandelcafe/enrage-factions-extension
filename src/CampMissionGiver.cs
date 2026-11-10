@@ -172,16 +172,23 @@ namespace EnRAGEPlayerFactionExtension
                  _faction.MissionType == MissionEliminateTargets || _faction.MissionType == MissionDestroyTarget ||
                  _faction.MissionType == MissionRescuePrisoner || _faction.MissionType == MissionHuntAnimal))
             {
-                // First prepare non-hostile mission entities (wagon/scout), while briefly
-                // holding only the initial guard spawn. Start a scene only if the player
-                // is actually at the scene point and camera creation succeeds.
-                _objectiveController.Maintain(player, true);
-                TryStartMissionSiteCinematic(player);
-
-                // If no scene started (mounted, combat state, unsupported camera, or too far
-                // from a staged wagon), immediately run the normal encounter path this tick.
-                if (!_story.IsCinematicActive)
-                    _objectiveController.Maintain(player, false);
+                bool needsStagedEntity = _faction.MissionType == MissionConvoy ||
+                    _faction.MissionType == MissionDestroyTarget || _faction.MissionType == MissionRescuePrisoner;
+                if (needsStagedEntity)
+                {
+                    // Create the wagon/prisoner first; these are non-hostile scene actors.
+                    _objectiveController.Maintain(player, true);
+                    TryStartMissionSiteCinematic(player);
+                    if (!_story.IsCinematicActive)
+                        _objectiveController.Maintain(player, false);
+                }
+                else
+                {
+                    // For hideout and wolf encounters, start the introductory shot BEFORE
+                    // hostile peds receive combat tasks. If it cannot start, spawn normally now.
+                    TryStartMissionSiteCinematic(player);
+                    _objectiveController.Maintain(player, _story.IsCinematicActive);
+                }
             }
 
             _story.Tick();
@@ -1592,31 +1599,31 @@ namespace EnRAGEPlayerFactionExtension
                     focus = _objectiveController.TargetVehiclePosition;
                     // The convoy wagon may be staged behind the road node; trigger on the
                     // actual wagon distance rather than the marker distance.
-                    if (player.Position.DistanceTo(focus) > 24f) return;
+                    if (player.Position.DistanceTo(focus) > 55f) return;
                     scenario = "WORLD_HUMAN_WRITE_NOTEBOOK";
                     duration = 4300;
                     break;
                 case MissionEliminateTargets:
-                    if (distance > 22f) return;
+                    if (distance > 35f) return;
                     // A low, cautious look over the hideout before hostiles are released.
                     duration = 4200;
                     break;
                 case MissionDestroyTarget:
                     if (!_objectiveController.TargetVehicleAvailable) return;
                     focus = _objectiveController.TargetVehiclePosition;
-                    if (distance > 22f || player.Position.DistanceTo(focus) > 26f) return;
+                    if (distance > 35f || player.Position.DistanceTo(focus) > 40f) return;
                     scenario = "WORLD_HUMAN_WRITE_NOTEBOOK";
                     duration = 3900;
                     break;
                 case MissionRescuePrisoner:
-                    if (distance > 22f) return;
+                    if (distance > 35f) return;
                     Ped captive = _objectiveController.CourierPed;
                     if (captive == null || !captive.Exists() || captive.IsDead) return;
                     focus = captive.Position;
                     duration = 4400;
                     break;
                 case MissionHuntAnimal:
-                    if (distance > 22f) return;
+                    if (_faction.MissionObjectiveIndex < 2 || distance > 35f) return;
                     // The player examines the last sign and the camera pans beyond it;
                     // the wolf pack is allowed to spawn after the cinematic ends.
                     duration = 4600;
