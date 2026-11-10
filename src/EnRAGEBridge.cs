@@ -1619,12 +1619,18 @@ namespace EnRAGEPlayerFactionExtension
             MaintainPlayerFactionNeutrality(data);
         }
 
-        internal bool AwardMissionResources(PlayerFactionData data, int suppliesReward, int treasuryReward, out string error)
+        internal bool AwardMissionResources(PlayerFactionData data, int suppliesReward, int treasuryReward,
+            string missionRewardId, out string error)
         {
             error = null;
             if (!IsAvailable || data == null || !data.Founded || MainInstance == null)
             {
                 error = "enRAGE o la facción del jugador todavía no están disponibles.";
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(missionRewardId))
+            {
+                error = "No se recibió un identificador persistente para la recompensa.";
                 return false;
             }
 
@@ -1651,34 +1657,106 @@ namespace EnRAGEPlayerFactionExtension
                     return false;
                 }
 
+                MethodInfo saveWorld = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "SaveWorld" && m.GetParameters().Length == 0);
+                if (saveWorld == null)
+                {
+                    error = "No se encontró SaveWorld; se evita aplicar una recompensa que no pueda persistirse.";
+                    return false;
+                }
+
                 int currentSupplies = supplies.Contains(data.Id) ? Convert.ToInt32(supplies[data.Id]) : 0;
                 int currentTreasury = treasury.Contains(data.Id) ? Convert.ToInt32(treasury[data.Id]) : 0;
-                int newSupplies = Math.Max(0, currentSupplies + Math.Max(0, suppliesReward));
-                int newTreasury = Math.Max(0, currentTreasury + Math.Max(0, treasuryReward));
+
+                // A receipt survives the mission-completion save. If the script restarts after the
+                // native resources were saved but before MissionStage was cleared, never add them twice.
+                if (string.Equals(data.LastAppliedMissionRewardId, missionRewardId, StringComparison.Ordinal))
+                {
+                    data.CurrentSupplies = currentSupplies;
+                    data.CurrentTreasury = currentTreasury;
+                    data.ResourcesInitialized = true;
+                    return true;
+                }
+
+                bool resumingPending = string.Equals(data.PendingMissionRewardId, missionRewardId, StringComparison.Ordinal);
+                int newSupplies;
+                int newTreasury;
+                if (resumingPending)
+                {
+                    bool nativeAlreadyAtTarget =
+                        currentSupplies == data.PendingMissionRewardSuppliesAfter &&
+                        currentTreasury == data.PendingMissionRewardTreasuryAfter;
+                    if (nativeAlreadyAtTarget)
+                    {
+                        data.LastAppliedMissionRewardId = missionRewardId;
+                        data.PendingMissionRewardId = string.Empty;
+                        data.CurrentSupplies = currentSupplies;
+                        data.CurrentTreasury = currentTreasury;
+                        data.ResourcesInitialized = true;
+                        data.Save();
+                        Log.Write("Recovered an already-persisted mission reward receipt: " + missionRewardId + ".");
+                        return true;
+                    }
+
+                    bool nativeStillAtBefore =
+                        currentSupplies == data.PendingMissionRewardSuppliesBefore &&
+                        currentTreasury == data.PendingMissionRewardTreasuryBefore;
+                    if (nativeStillAtBefore)
+                    {
+                        newSupplies = data.PendingMissionRewardSuppliesAfter;
+                        newTreasury = data.PendingMissionRewardTreasuryAfter;
+                    }
+                    else
+                    {
+                        // Other resource changes happened while the reward was pending. Rebase the
+                        // pending award on the live balance rather than overwriting those changes.
+                        newSupplies = Math.Max(0, currentSupplies + Math.Max(0, suppliesReward));
+                        newTreasury = Math.Max(0, currentTreasury + Math.Max(0, treasuryReward));
+                        data.PendingMissionRewardSuppliesBefore = currentSupplies;
+                        data.PendingMissionRewardTreasuryBefore = currentTreasury;
+                        data.PendingMissionRewardSuppliesAfter = newSupplies;
+                        data.PendingMissionRewardTreasuryAfter = newTreasury;
+                        data.Save();
+                    }
+                }
+                else
+                {
+                    newSupplies = Math.Max(0, currentSupplies + Math.Max(0, suppliesReward));
+                    newTreasury = Math.Max(0, currentTreasury + Math.Max(0, treasuryReward));
+                    data.PendingMissionRewardId = missionRewardId;
+                    data.PendingMissionRewardSuppliesBefore = currentSupplies;
+                    data.PendingMissionRewardTreasuryBefore = currentTreasury;
+                    data.PendingMissionRewardSuppliesAfter = newSupplies;
+                    data.PendingMissionRewardTreasuryAfter = newTreasury;
+                    // Write-ahead journal: the expected before/after balances are saved before touching enRAGE.
+                    data.Save();
+                }
+
                 supplies[data.Id] = newSupplies;
                 treasury[data.Id] = newTreasury;
-
-                try
-                {
-                    MethodInfo saveWorld = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
-                        m.Name == "SaveWorld" && m.GetParameters().Length == 0);
-                    if (saveWorld != null) saveWorld.Invoke(MainInstance, null);
-                }
-                catch (Exception ex) { Log.Write("SaveWorld after mission reward warning: " + Unwrap(ex)); }
+                saveWorld.Invoke(MainInstance, null);
 
                 data.CurrentSupplies = newSupplies;
                 data.CurrentTreasury = newTreasury;
                 data.ResourcesInitialized = true;
-                try { data.Save(); }
-                catch (Exception ex) { Log.Write("Mission reward mirror save warning: " + ex.Message); }
-                Log.Write("Mission reward applied to native faction resources: supplies +" + Math.Max(0, suppliesReward) +
-                    ", treasury +$" + Math.Max(0, treasuryReward) + ".");
+                data.LastAppliedMissionRewardId = missionRewardId;
+                data.PendingMissionRewardId = string.Empty;
+                data.PendingMissionRewardSuppliesBefore = 0;
+                data.PendingMissionRewardTreasuryBefore = 0;
+                data.PendingMissionRewardSuppliesAfter = 0;
+                data.PendingMissionRewardTreasuryAfter = 0;
+                // If this save fails, the pending before/after journal remains on disk and the next
+                // attempt can detect that SaveWorld already committed the exact target balances.
+                data.Save();
+                Log.Write("Mission reward applied once. Receipt=" + missionRewardId +
+                    ", supplies +" + Math.Max(0, suppliesReward) + ", treasury +$" +
+                    Math.Max(0, treasuryReward) + ".");
                 return true;
             }
             catch (Exception ex)
             {
                 error = Unwrap(ex);
-                Log.Write("Mission reward failed: " + error);
+                Log.Write("Mission reward failed or remains pending: " + error);
                 return false;
             }
         }
