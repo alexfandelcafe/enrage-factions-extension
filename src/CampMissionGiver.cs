@@ -1129,6 +1129,8 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionDifficulty = MissionCatalog.DetermineDifficulty(_faction.MissionsCompleted, missionRandom);
             _faction.MissionType = MissionCatalog.SelectNext(_faction.MissionsCompleted,
                 _faction.LastMissionType, _faction.MissionDifficulty, missionRandom);
+            // Optional clean-observation bonus for stakeout; leaving after entering cancels it.
+            _faction.MissionOptionalBonusPercent = _faction.MissionType == MissionStakeout ? 15 : 0;
             _faction.MissionConvoyWagonHandle = 0;
             _faction.MissionConvoyEnemyHandles.Clear();
             _cacheSpawnFailures = 0;
@@ -1601,8 +1603,17 @@ namespace EnRAGEPlayerFactionExtension
                         }
                         else if (_objectiveController.IsPlayerNearLoot(player) && _lootPromptJustCompleted)
                         {
-                            _story.OnObjectiveInteraction(player, "REVISIÓN: Buscas entre los bultos y rescatas lo que todavía puede servir.");
-                            AdvanceMissionToReturn("Has saqueado el convoy y recuperado sus suministros.");
+                            Vehicle cargo = _objectiveController.CargoWagon;
+                            bool intactCargo = cargo != null && cargo.Exists() && !cargo.IsOnFire &&
+                                cargo.Health >= 700 && cargo.BodyHealth >= 700f;
+                            _faction.MissionOptionalBonusPercent = intactCargo ? 15 : 0;
+                            SaveFaction();
+                            _story.OnObjectiveInteraction(player, intactCargo
+                                ? "REVISIÓN: La carga se ha conservado en buen estado. Esta recuperación merece una bonificación."
+                                : "REVISIÓN: Rescatas lo que queda del cargamento antes de retirarte.");
+                            AdvanceMissionToReturn(intactCargo
+                                ? "Has recuperado los suministros con la carreta en buen estado. Objetivo opcional cumplido."
+                                : "Has saqueado el convoy y recuperado sus suministros."); 
                         }
                     }
                 }
@@ -1811,6 +1822,17 @@ namespace EnRAGEPlayerFactionExtension
                         _lastMissionProgressTickAt = now;
                     }
 
+                    if (_faction.MissionObjectiveReady && !insidePerimeter &&
+                        _faction.MissionWaitProgressMs < StakeoutDurationMs)
+                    {
+                        if (_faction.MissionOptionalBonusPercent != 0)
+                        {
+                            _faction.MissionOptionalBonusPercent = 0;
+                            SaveFaction();
+                            _story.ShowMissionStatus("Objetivo opcional perdido: saliste del perímetro. La misión aún puede completarse.", 2500);
+                        }
+                    }
+
                     if (insidePerimeter && !_faction.MissionObjectiveReady)
                     {
                         _faction.MissionObjectiveReady = true;
@@ -1945,6 +1967,9 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionTargetX = 0f;
             _faction.MissionTargetY = 0f;
             _faction.MissionTargetZ = 0f;
+            _faction.MissionTargetHeading = 0f;
+            _faction.MissionTargetHasRoadNode = false;
+            _faction.MissionOptionalBonusPercent = 0;
             _missionTimerInitialized = false;
             _lastMissionProgressTickAt = 0;
             _cacheSpawnFailures = 0;
@@ -1987,6 +2012,13 @@ namespace EnRAGEPlayerFactionExtension
             _nextRewardRetryAt = Game.GameTime + 5000;
             int suppliesReward, treasuryReward, prestigeReward;
             GetMissionReward(_faction.MissionType, out suppliesReward, out treasuryReward, out prestigeReward);
+            int bonusPercent = Math.Max(0, Math.Min(50, _faction.MissionOptionalBonusPercent));
+            if (bonusPercent > 0)
+            {
+                suppliesReward += Math.Max(1, (int)Math.Round(suppliesReward * bonusPercent / 100.0));
+                treasuryReward += Math.Max(1, (int)Math.Round(treasuryReward * bonusPercent / 100.0));
+                prestigeReward += Math.Max(1, (int)Math.Round(prestigeReward * bonusPercent / 100.0));
+            }
 
             string error;
             string rewardId = BuildMissionRewardId();
@@ -2015,11 +2047,15 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionTargetX = 0f;
             _faction.MissionTargetY = 0f;
             _faction.MissionTargetZ = 0f;
+            _faction.MissionTargetHeading = 0f;
+            _faction.MissionTargetHasRoadNode = false;
+            _faction.MissionOptionalBonusPercent = 0;
             _cacheSpawnFailures = 0;
             SaveFaction();
             RemoveTargetBlip();
+            string bonusNote = bonusPercent > 0 ? " Bonificación opcional aplicada: " + bonusPercent + "%." : string.Empty;
             string completionSummary = "El trabajo está hecho. La banda recibe " + suppliesReward +
-                " suministros, $" + treasuryReward + " para la tesorería y " + prestigeReward + " de prestigio.";
+                " suministros, $" + treasuryReward + " para la tesorería y " + prestigeReward + " de prestigio." + bonusNote;
             _story.OnMissionCompleted(_faction.LastMissionType, completionSummary);
             Log.Write("Independent mission completed: " + completedName + ". Count=" + _faction.MissionsCompleted +
                 ", mission prestige=" + _faction.MissionPrestige + ", resources=+" + suppliesReward +
