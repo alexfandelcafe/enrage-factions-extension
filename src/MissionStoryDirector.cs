@@ -203,12 +203,14 @@ namespace EnRAGEPlayerFactionExtension
                 case 6:
                     return new[] {
                         "ENCARGADO: Un grupo se ha instalado demasiado cerca de nuestros caminos. Entra en su escondite y no dejes que vuelva a organizarse.",
+                        "ENCARGADO: Objetivo opcional: acércate sin abrir fuego. Si la guardia no te detecta, recibirás una bonificación del 15%.",
                         "ENCARGADO: Cuenta a los hombres antes de retirarte; no des por despejado el lugar mientras quede uno en pie.",
                         "ENCARGADO: " + qualifier
                     };
                 case 7:
                     return new[] {
                         "ENCARGADO: Un carro de suministros abastece a una partida rival. Localízalo, neutraliza a su escolta y deja el vehículo fuera de servicio.",
+                        "ENCARGADO: Objetivo opcional: evita que la guardia te vea y conserva una bonificación del 15% por sabotaje discreto.",
                         "ENCARGADO: No basta con espantar a los guardias. El carro no debe llegar a su destino.",
                         "ENCARGADO: " + qualifier
                     };
