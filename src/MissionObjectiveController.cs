@@ -69,6 +69,15 @@ namespace EnRAGEPlayerFactionExtension
             get { Vehicle vehicle = ResolveWagon(MissionTarget, 250f); return vehicle != null && vehicle.Exists(); }
         }
         internal bool TargetVehicleSpawnFailed { get { return _vehicleSpawnFailures >= 3; } }
+        internal Vector3 TargetVehiclePosition
+        {
+            get
+            {
+                Vector3 target = MissionTarget;
+                Vehicle wagon = ResolveWagon(target, 250f);
+                return wagon != null && wagon.Exists() ? wagon.Position : target;
+            }
+        }
 
         internal void ReconcileProcessScopedHandles()
         {
@@ -100,7 +109,7 @@ namespace EnRAGEPlayerFactionExtension
             SaveFaction();
         }
 
-        internal void Maintain(Ped player)
+        internal void Maintain(Ped player, bool suppressNewGuardSpawns = false)
         {
             if (player == null || !player.Exists() || _faction.MissionStage != 1) return;
             Vector3 target = MissionTarget;
@@ -168,6 +177,9 @@ namespace EnRAGEPlayerFactionExtension
                     MaintainConvoyDriver(target, convoyWagon);
             }
 
+            // CampMissionGiver may temporarily defer only the first guard spawn for a short
+            // cinematic. Vehicle/prisoner setup and retry state continue to run above this point.
+            if (suppressNewGuardSpawns) return;
             if (_faction.MissionEncounterSpawned || _spawnFailures >= 3 || Game.GameTime < _nextSpawnAttemptAt) return;
 
             _nextSpawnAttemptAt = Game.GameTime + 5000;
