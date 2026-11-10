@@ -45,6 +45,7 @@ namespace EnRAGEPlayerFactionExtension
         private readonly Dictionary<int, int> _enemyBlips = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _missingEnemySince = new Dictionary<int, int>();
         private readonly HashSet<int> _lostEnemyHandles = new HashSet<int>();
+        private bool _stealthAlerted;
 
         internal MissionObjectiveController(PlayerFactionData faction) { _faction = faction; }
 
@@ -95,6 +96,7 @@ namespace EnRAGEPlayerFactionExtension
             _vehicleSpawnFailures = 0;
             _courierSpawnFailures = 0;
             _convoyDriverSpawnFailures = 0;
+            _stealthAlerted = false;
             SaveFaction();
         }
 
@@ -109,6 +111,9 @@ namespace EnRAGEPlayerFactionExtension
             int missionType = _faction.MissionType;
             float distance = player.Position.DistanceTo(target);
             int processId = Process.GetCurrentProcess().Id;
+
+            if (missionType == MissionEliminateTargets || missionType == MissionDestroyTarget)
+                MaintainStealthEncounter(player, target);
 
             if (missionType == MissionCourier || missionType == MissionRescuePrisoner)
             {
@@ -315,6 +320,7 @@ namespace EnRAGEPlayerFactionExtension
                 : 0;
             _missingEnemySince.Clear();
             _lostEnemyHandles.Clear();
+            _stealthAlerted = false;
             _nextSpawnAttemptAt = 0;
             _nextVehicleSpawnAttemptAt = 0;
             _nextConvoyDriverSpawnAt = 0;
@@ -534,6 +540,8 @@ namespace EnRAGEPlayerFactionExtension
                     _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                     SaveFaction();
                     EnsureEnemyBlip(targetPed);
+                    bool stealthContract = (missionType == MissionEliminateTargets || missionType == MissionDestroyTarget) &&
+                        _faction.MissionOptionalBonusPercent > 0;
                     if (hunting)
                     {
                         targetPed.Task.Combat(player, -1);
@@ -553,10 +561,76 @@ namespace EnRAGEPlayerFactionExtension
                         else
                             weaponHash = MISC.GET_HASH_KEY("WEAPON_REVOLVER_CATTLEMAN");
                         targetPed.Weapons.Give(weaponHash, 36 + difficulty * 18);
-                        targetPed.Task.Combat(player, -1);
+                        if (stealthContract)
+                        {
+                            targetPed.BlockPermanentEvents = true;
+                            TASK.TASK_STAND_STILL(targetPed.Handle, -1);
+                        }
+                        else
+                        {
+                            targetPed.BlockPermanentEvents = false;
+                            targetPed.Task.Combat(player, -1);
+                        }
                     }
                 }
                 catch (Exception ex) { Log.Write("Mission target spawn warning for " + modelName + ": " + ex.Message); }
+            }
+        }
+
+        private void MaintainStealthEncounter(Ped player, Vector3 target)
+        {
+            if (player == null || !player.Exists() || _faction.MissionStage != 1 ||
+                _faction.MissionOptionalBonusPercent <= 0 || _stealthAlerted ||
+                _faction.MissionConvoyEnemyHandles == null ||
+                _faction.MissionConvoyEnemyHandles.Count == 0)
+                return;
+
+            bool alerted = false;
+            try { alerted = PED.IS_PED_SHOOTING(player.Handle); }
+            catch { }
+
+            if (!alerted)
+            {
+                foreach (int handle in _faction.MissionConvoyEnemyHandles)
+                {
+                    Ped guard = ResolveGuard(handle, target);
+                    if (guard == null || !guard.Exists() || guard.IsDead) continue;
+                    float distance;
+                    try { distance = guard.Position.DistanceTo(player.Position); }
+                    catch { continue; }
+                    if (distance > 32f) continue;
+
+                    try
+                    {
+                        if (ENTITY.HAS_ENTITY_CLEAR_LOS_TO_ENTITY(guard.Handle, player.Handle, 17))
+                        {
+                            alerted = true;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            if (!alerted) return;
+
+            _stealthAlerted = true;
+            _faction.MissionOptionalBonusPercent = 0;
+            SaveFaction();
+            Log.Write("Mission stealth objective failed: target group detected the player or the player fired.");
+            foreach (int handle in _faction.MissionConvoyEnemyHandles)
+            {
+                Ped guard = ResolveGuard(handle, target);
+                if (guard == null || !guard.Exists() || guard.IsDead) continue;
+                try
+                {
+                    guard.BlockPermanentEvents = false;
+                    guard.Task.Combat(player, -1);
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Stealth encounter alert task warning for ped " + handle + ": " + ex.Message);
+                }
             }
         }
 
