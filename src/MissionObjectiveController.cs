@@ -324,7 +324,7 @@ namespace EnRAGEPlayerFactionExtension
             _nextSpawnAttemptAt = 0;
             _nextVehicleSpawnAttemptAt = 0;
             _nextConvoyDriverSpawnAt = 0;
-            _nextConvoyDriverSpawnFailures = 0;
+            _convoyDriverSpawnFailures = 0;
             _nextConvoyDriverTaskAt = 0;
             _nextCourierSpawnAttemptAt = 0;
             _courierSpawnFailures = 0;
