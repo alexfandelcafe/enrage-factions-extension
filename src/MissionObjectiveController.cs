@@ -375,6 +375,7 @@ namespace EnRAGEPlayerFactionExtension
                 ENTITY.SET_ENTITY_AS_MISSION_ENTITY(wagon.Handle, true, true);
                 try { VEHICLE.SET_VEHICLE_ON_GROUND_PROPERLY(wagon.Handle, false); } catch { }
                 _faction.MissionConvoyWagonHandle = wagon.Handle;
+                _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                 SaveFaction();
                 Log.Write("Mission target wagon spawned for contract " + _faction.MissionType + ". Handle=" + wagon.Handle + ".");
                 return true;
@@ -445,6 +446,7 @@ namespace EnRAGEPlayerFactionExtension
                     created.BlockPermanentEvents = true;
                     created.Accuracy = 15;
                     _faction.MissionConvoyDriverPedHandle = created.Handle;
+                    _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                     driver = created;
                     SaveFaction();
                     Log.Write("Moving convoy driver spawned. Handle=" + created.Handle + ", wagon=" + wagon.Handle + ".");
@@ -520,6 +522,8 @@ namespace EnRAGEPlayerFactionExtension
 
                     ENTITY.SET_ENTITY_AS_MISSION_ENTITY(targetPed.Handle, true, true);
                     _faction.MissionConvoyEnemyHandles.Add(targetPed.Handle);
+                    _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
+                    SaveFaction();
                     EnsureEnemyBlip(targetPed);
                     if (hunting)
                     {
@@ -673,6 +677,7 @@ namespace EnRAGEPlayerFactionExtension
                         MISC.GET_HASH_KEY("WORLD_HUMAN_SIT_GROUND"), -1, true, 0U, -1f, false);
                 }
                 _faction.MissionCourierPedHandle = courier.Handle;
+                _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                 SaveFaction();
                 FaceCourier(courier, player);
                 Log.Write("Mission courier contact created. Handle=" + courier.Handle + ".");
