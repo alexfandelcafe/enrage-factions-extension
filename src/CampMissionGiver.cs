@@ -52,6 +52,12 @@ namespace EnRAGEPlayerFactionExtension
         private Prop _supplyCache;
         private int _nextCacheSpawnRetryAt;
         private int _cacheSpawnFailures;
+        private Prop _missionClueProp;
+        private Vector3 _clueTargetPosition;
+        private int _cluePropMissionType = -1;
+        private int _cluePropObjectiveIndex = -1;
+        private int _cluePropSpawnFailures;
+        private int _nextCluePropSpawnRetryAt;
         private int _nextTargetGroundCheckAt;
         private int _nextEscortReminderAt;
         private int _stakeoutRadiusBlip;
@@ -125,6 +131,14 @@ namespace EnRAGEPlayerFactionExtension
             else if (_faction.MissionCachePropHandle != 0)
             {
                 DeleteSupplyCacheProp();
+                SaveFaction();
+            }
+
+            if (IsCurrentMissionCluePoint())
+                MaintainMissionClueProp(player);
+            else if (_missionClueProp != null || _faction.MissionCluePropHandle != 0)
+            {
+                DeleteMissionClueProp();
                 SaveFaction();
             }
             if (_faction.MissionStage == 1 &&
@@ -715,11 +729,18 @@ namespace EnRAGEPlayerFactionExtension
             int entityHandle = 0;
             string promptLabel = string.Empty;
 
-            if (_faction.MissionStage == 1 && _faction.MissionObjectiveReady &&
+            if (_faction.MissionStage == 1 &&
                 player != null && player.Exists() && !player.IsDead &&
                 !player.IsOnMount && !player.IsInVehicle)
             {
-                if (_faction.MissionType == MissionSupplyCache &&
+                if (IsCurrentMissionCluePoint() && _missionClueProp != null &&
+                    _missionClueProp.Exists() &&
+                    player.Position.DistanceTo(_missionClueProp.Position) <= 5f)
+                {
+                    entityHandle = _missionClueProp.Handle;
+                    promptLabel = GetMissionCluePromptLabel();
+                }
+                else if (_faction.MissionObjectiveReady && _faction.MissionType == MissionSupplyCache &&
                     _faction.MissionObjectiveIndex >= 2 &&
                     (_objectiveController.AllGuardsDefeated() || _objectiveController.EncounterSpawnFailed) &&
                     _supplyCache != null && _supplyCache.Exists() &&
@@ -728,7 +749,7 @@ namespace EnRAGEPlayerFactionExtension
                     entityHandle = _supplyCache.Handle;
                     promptLabel = "Recoger provisiones";
                 }
-                else if (_faction.MissionType == MissionRescuePrisoner &&
+                else if (_faction.MissionObjectiveReady && _faction.MissionType == MissionRescuePrisoner &&
                     _faction.MissionObjectiveIndex >= 1)
                 {
                     Ped prisoner = _objectiveController.CourierPed;
@@ -739,7 +760,7 @@ namespace EnRAGEPlayerFactionExtension
                         promptLabel = "Liberar al explorador";
                     }
                 }
-                else if (_faction.MissionType == MissionCourier &&
+                else if (_faction.MissionObjectiveReady && _faction.MissionType == MissionCourier &&
                     _faction.MissionObjectiveIndex >= 1)
                 {
                     Ped courier = _objectiveController.CourierPed;
@@ -797,6 +818,142 @@ namespace EnRAGEPlayerFactionExtension
             {
                 _objectivePromptArmed = true;
             }
+        }
+
+        private bool IsCurrentMissionCluePoint()
+        {
+            if (_faction.MissionStage != 1) return false;
+            if (_faction.MissionType == MissionReconnaissance)
+                return _faction.MissionObjectiveIndex < 2;
+            if (_faction.MissionType == MissionPatrol)
+                return _faction.MissionObjectiveIndex < PatrolWaypointCount;
+            if (_faction.MissionType == MissionHuntAnimal)
+                return _faction.MissionObjectiveIndex < 2;
+            return false;
+        }
+
+        private string GetMissionCluePromptLabel()
+        {
+            if (_faction.MissionType == MissionPatrol) return "Registrar punto de control";
+            if (_faction.MissionType == MissionHuntAnimal) return "Examinar rastros";
+            return "Inspeccionar señales";
+        }
+
+        private void MaintainMissionClueProp(Ped player)
+        {
+            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+            if (target == Vector3.Zero) return;
+
+            bool newClue = _cluePropMissionType != _faction.MissionType ||
+                _cluePropObjectiveIndex != _faction.MissionObjectiveIndex ||
+                _clueTargetPosition.DistanceTo(target) > 0.25f;
+            if (newClue)
+            {
+                DeleteMissionClueProp();
+                _cluePropMissionType = _faction.MissionType;
+                _cluePropObjectiveIndex = _faction.MissionObjectiveIndex;
+                _clueTargetPosition = target;
+                _cluePropSpawnFailures = 0;
+                _nextCluePropSpawnRetryAt = 0;
+            }
+
+            uint mapModelHash = MISC.GET_HASH_KEY("p_cs_map01x");
+            if (_missionClueProp != null && _missionClueProp.Exists())
+            {
+                try
+                {
+                    if (unchecked((uint)_missionClueProp.Model.Hash) == mapModelHash &&
+                        _missionClueProp.Position.DistanceTo(target) <= 12f) return;
+                }
+                catch { }
+                _missionClueProp = null;
+            }
+
+            if (_faction.MissionCluePropHandle != 0)
+            {
+                try
+                {
+                    Prop candidate = new Prop(_faction.MissionCluePropHandle);
+                    if (candidate.Exists() && unchecked((uint)candidate.Model.Hash) == mapModelHash &&
+                        candidate.Position.DistanceTo(target) <= 12f)
+                    {
+                        _missionClueProp = candidate;
+                        return;
+                    }
+                }
+                catch { }
+                _faction.MissionCluePropHandle = 0;
+                SaveFaction();
+            }
+
+            if (player == null || !player.Exists() || player.Position.DistanceTo(target) > 110f ||
+                Game.GameTime < _nextCluePropSpawnRetryAt || _cluePropSpawnFailures >= 3)
+                return;
+
+            _nextCluePropSpawnRetryAt = Game.GameTime + 2500;
+            try
+            {
+                Model model = new Model("p_cs_map01x");
+                if (!model.IsValid || (!model.IsLoaded && !model.Request(1000)))
+                {
+                    _cluePropSpawnFailures++;
+                    Log.Write("Mission clue prop model unavailable (attempt " + _cluePropSpawnFailures + ").");
+                    return;
+                }
+                STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
+                Prop created = World.CreateProp(model, new Vector3(target.X, target.Y, target.Z + 0.05f), false, true);
+                if (created == null || !created.Exists())
+                {
+                    _cluePropSpawnFailures++;
+                    Log.Write("Mission clue prop spawn failed (attempt " + _cluePropSpawnFailures + ").");
+                    return;
+                }
+                ENTITY.SET_ENTITY_AS_MISSION_ENTITY(created.Handle, true, true);
+                _missionClueProp = created;
+                _faction.MissionCluePropHandle = created.Handle;
+                _cluePropSpawnFailures = 0;
+                SaveFaction();
+                Log.Write("Mission clue prop created. Type=" + _faction.MissionType +
+                    ", step=" + _faction.MissionObjectiveIndex + ", handle=" + created.Handle + ".");
+            }
+            catch (Exception ex)
+            {
+                _cluePropSpawnFailures++;
+                Log.Write("Mission clue prop spawn warning (attempt " + _cluePropSpawnFailures + "): " + ex.Message);
+            }
+        }
+
+        private void DeleteMissionClueProp()
+        {
+            int handle = _faction.MissionCluePropHandle;
+            Prop candidate = _missionClueProp;
+            if ((candidate == null || !candidate.Exists()) && handle != 0)
+            {
+                try { candidate = new Prop(handle); }
+                catch { candidate = null; }
+            }
+
+            if (candidate != null && candidate.Exists())
+            {
+                try
+                {
+                    uint expected = MISC.GET_HASH_KEY("p_cs_map01x");
+                    Vector3 expectedPosition = _clueTargetPosition != Vector3.Zero
+                        ? _clueTargetPosition
+                        : new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
+                    if (unchecked((uint)candidate.Model.Hash) == expected &&
+                        expectedPosition != Vector3.Zero && candidate.Position.DistanceTo(expectedPosition) <= 12f)
+                        candidate.Delete();
+                }
+                catch (Exception ex) { Log.Write("Mission clue prop cleanup warning: " + ex.Message); }
+            }
+            _missionClueProp = null;
+            _faction.MissionCluePropHandle = 0;
+            _clueTargetPosition = Vector3.Zero;
+            _cluePropMissionType = -1;
+            _cluePropObjectiveIndex = -1;
+            _nextCluePropSpawnRetryAt = 0;
+            _cluePropSpawnFailures = 0;
         }
 
         private bool TryCreateObjectivePrompt(int group, int entityHandle, string label)
