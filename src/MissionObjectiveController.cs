@@ -181,6 +181,7 @@ namespace EnRAGEPlayerFactionExtension
                 if (guard != null && guard.Exists())
                 {
                     _missingEnemySince.Remove(handle);
+                    _lostEnemyHandles.Remove(handle);
                     if (!guard.IsDead) return false;
                     continue;
                 }
