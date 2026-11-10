@@ -45,9 +45,6 @@ namespace EnRAGEPlayerFactionExtension
         private string _activeMusicStopEvent = CombatMusicStop;
         private readonly HashSet<string> _playedCinematics = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _cinematicActive;
-        private bool _cinematicScenarioPending;
-        private string _cinematicScenario = string.Empty;
-        private int _cinematicScenarioStartAt;
         private int _cinematicCamera;
         private int _cinematicStartedAt;
         private int _cinematicDurationMs;
@@ -166,22 +163,19 @@ namespace EnRAGEPlayerFactionExtension
 
                 if (!string.IsNullOrWhiteSpace(scenario))
                 {
-                    _cinematicScenario = scenario;
-                    _cinematicScenarioPending = true;
-                    _cinematicScenarioStartAt = Game.GameTime + 850;
                     try
                     {
+                        // Start the verified world scenario immediately after taking the camera.
+                        // Delaying it by another tick made the short scene easy to miss.
                         TASK.CLEAR_PED_TASKS(player.Handle, true, false);
-                        Function.Call(TurnPedToFaceCoordHash, new InputArgument[]
-                        {
-                            player.Handle, focus.X, focus.Y, focus.Z, 750
-                        });
+                        TASK.TASK_START_SCENARIO_IN_PLACE_HASH(player.Handle,
+                            MISC.GET_HASH_KEY(scenario), -1, true, 0U, -1f, false);
+                        Log.Write("Mission cinematic scenario requested immediately: " + scenario + ".");
                     }
                     catch (Exception ex)
                     {
-                        // The camera-only version remains valid when the contextual turn cannot run.
-                        Log.Write("Mission cinematic facing-task warning: " + ex.Message);
-                        _cinematicScenarioStartAt = Game.GameTime;
+                        // Keep the camera shot and mission flow even if a scenario is unavailable.
+                        Log.Write("Mission cinematic scenario warning (" + scenario + "): " + ex.Message);
                     }
                 }
 
@@ -223,25 +217,6 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     CleanupCinematic(true, !skip);
                     return;
-                }
-
-                if (_cinematicScenarioPending && Game.GameTime >= _cinematicScenarioStartAt)
-                {
-                    string scenario = _cinematicScenario;
-                    _cinematicScenarioPending = false;
-                    _cinematicScenario = string.Empty;
-                    _cinematicScenarioStartAt = 0;
-                    try
-                    {
-                        TASK.CLEAR_PED_TASKS(player.Handle, true, false);
-                        TASK.TASK_START_SCENARIO_IN_PLACE_HASH(player.Handle,
-                            MISC.GET_HASH_KEY(scenario), -1, true, 0U, -1f, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        // The camera-only version is still valid when a scenario is unavailable.
-                        Log.Write("Mission cinematic scenario warning (" + scenario + "): " + ex.Message);
-                    }
                 }
 
                 float progress = Math.Max(0f, Math.Min(1f, elapsed / (float)_cinematicDurationMs));
@@ -293,9 +268,6 @@ namespace EnRAGEPlayerFactionExtension
         {
             int camera = _cinematicCamera;
             _cinematicCamera = 0;
-            _cinematicScenarioPending = false;
-            _cinematicScenario = string.Empty;
-            _cinematicScenarioStartAt = 0;
             int playerHandle = _cinematicPlayerHandle;
             string completedKey = _activeCinematicKey;
             Vector3 completedLookAt = _cinematicFocusEnd;
