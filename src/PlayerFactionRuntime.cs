@@ -2420,6 +2420,12 @@ namespace EnRAGEPlayerFactionExtension
             if (member.FallbackScenarioOrder.Count == 0 || member.FallbackScenarioIndex >= member.FallbackScenarioOrder.Count)
             {
                 member.FallbackScenarioOrder.Clear();
+                // These scenarios are started in-place at an arbitrary camp position. Keep the
+                // fallback list location-independent: fishing, fire-specific, ledge-seat and
+                // PROP_HUMAN_SEAT_* scenarios need a matching world/prop point and can otherwise
+                // produce nonsensical activities or seated animations with no visible support.
+                // Actual chair/bench use is attempted first through the native nearest-scenario
+                // lookup around CampKit anchors in TryStartNearestUnusedCampObjectScenario().
                 member.FallbackScenarioOrder.AddRange(new[]
                 {
                     "WORLD_HUMAN_STAND_WAITING",
@@ -2446,15 +2452,8 @@ namespace EnRAGEPlayerFactionExtension
                     "WORLD_HUMAN_HANG_OUT_STREET",
                     "WORLD_HUMAN_HAMMERING",
                     "WORLD_HUMAN_DRINKING",
-                    "WORLD_HUMAN_CAMP_FIRE_SIT",
-                    "WORLD_HUMAN_CAMP_FIRE_STAND",
                     "WORLD_HUMAN_READ_NEWSPAPER",
-                    "WORLD_HUMAN_WRITE_NOTEBOOK",
-                    "WORLD_HUMAN_SEAT_LEDGE_HARMONICA",
-                    "WORLD_HUMAN_SEAT_LEDGE_JAW_HARP",
-                    "PROP_HUMAN_SEAT_CHAIR",
-                    "PROP_HUMAN_SEAT_BENCH",
-                    "WORLD_HUMAN_STAND_FISHING"
+                    "WORLD_HUMAN_WRITE_NOTEBOOK"
                 });
                 for (int i = member.FallbackScenarioOrder.Count - 1; i > 0; i--)
                 {
