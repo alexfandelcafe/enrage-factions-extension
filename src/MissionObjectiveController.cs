@@ -291,11 +291,25 @@ namespace EnRAGEPlayerFactionExtension
                 if (!model.IsValid || !model.IsVehicle) { Log.Write("Mission wagon model is invalid: " + ConvoyWagonModel + "."); return false; }
                 if (!model.IsLoaded && !model.Request(1500)) { Log.Write("Mission wagon model did not load: " + ConvoyWagonModel + "."); return false; }
                 double angle = (_faction.MissionsCompleted + 1) * 1.17 + _faction.MissionType * 0.31;
-                Vector3 position = new Vector3(target.X + (float)Math.Cos(angle) * 4.5f,
-                    target.Y + (float)Math.Sin(angle) * 4.5f, target.Z + 0.25f);
+                Vector3 position;
+                float heading;
+                if (_faction.MissionTargetHasRoadNode &&
+                    (_faction.MissionType == MissionConvoy || _faction.MissionType == MissionDestroyTarget))
+                {
+                    double roadAngle = _faction.MissionTargetHeading * Math.PI / 180.0;
+                    double sideOffset = roadAngle + Math.PI / 2.0;
+                    position = new Vector3(target.X + (float)Math.Cos(sideOffset) * 4.5f,
+                        target.Y + (float)Math.Sin(sideOffset) * 4.5f, target.Z + 0.25f);
+                    heading = (_faction.MissionTargetHeading % 360f + 360f) % 360f;
+                }
+                else
+                {
+                    position = new Vector3(target.X + (float)Math.Cos(angle) * 4.5f,
+                        target.Y + (float)Math.Sin(angle) * 4.5f, target.Z + 0.25f);
+                    heading = (float)((angle * 180.0 / Math.PI + 90.0) % 360.0);
+                }
                 VehicleHash wagonHash = (VehicleHash)Enum.ToObject(typeof(VehicleHash), MISC.GET_HASH_KEY(ConvoyWagonModel));
-                Vehicle wagon = World.CreateVehicle(wagonHash, position,
-                    (float)((angle * 180.0 / Math.PI + 90.0) % 360.0));
+                Vehicle wagon = World.CreateVehicle(wagonHash, position, heading);
                 if (wagon == null || !wagon.Exists()) { Log.Write("Mission target wagon could not be created at " + position + "."); return false; }
                 ENTITY.SET_ENTITY_AS_MISSION_ENTITY(wagon.Handle, true, true);
                 _faction.MissionConvoyWagonHandle = wagon.Handle;
