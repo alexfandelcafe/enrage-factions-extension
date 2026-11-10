@@ -1588,6 +1588,9 @@ namespace EnRAGEPlayerFactionExtension
                 ResetCinematicEncounterDeferral();
                 return false;
             }
+            if (missionType == MissionRescuePrisoner &&
+                _objectiveController.CourierSpawnFailed && !_objectiveController.CourierAvailable)
+                return false;
 
             bool withinEncounterRange;
             switch (missionType)
@@ -1683,7 +1686,8 @@ namespace EnRAGEPlayerFactionExtension
                 case MissionRescuePrisoner:
                     if (distance > 22f) return;
                     Ped captive = _objectiveController.CourierPed;
-                    if (captive != null && captive.Exists()) focus = captive.Position;
+                    if (captive == null || !captive.Exists() || captive.IsDead) return;
+                    focus = captive.Position;
                     duration = 4400;
                     break;
                 case MissionHuntAnimal:
