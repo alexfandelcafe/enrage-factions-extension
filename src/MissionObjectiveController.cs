@@ -78,6 +78,32 @@ namespace EnRAGEPlayerFactionExtension
             int missionType = _faction.MissionType;
             float distance = player.Position.DistanceTo(target);
 
+            // All dynamic mission entities are scoped to the running game process. Reconcile them
+            // before early returns (notably the delivery-contact contract) can reuse stale handles.
+            int processId = Process.GetCurrentProcess().Id;
+            if (_faction.MissionEncounterProcessId != processId &&
+                (_faction.MissionEncounterProcessId != 0 || HasMissionRuntimeHandles()))
+            {
+                RemoveAllEnemyBlips();
+                _faction.MissionConvoyWagonHandle = 0;
+                _faction.MissionConvoyDriverPedHandle = 0;
+                _faction.MissionCourierPedHandle = 0;
+                _faction.MissionCachePropHandle = 0;
+                _faction.MissionCluePropHandle = 0;
+                if (_faction.MissionScenePropHandles != null) _faction.MissionScenePropHandles.Clear();
+                if (_faction.MissionConvoyEnemyHandles == null)
+                    _faction.MissionConvoyEnemyHandles = new List<int>();
+                else
+                    _faction.MissionConvoyEnemyHandles.Clear();
+                _faction.MissionEncounterSpawned = false;
+                _faction.MissionEncounterProcessId = 0;
+                _spawnFailures = 0;
+                _vehicleSpawnFailures = 0;
+                _courierSpawnFailures = 0;
+                _convoyDriverSpawnFailures = 0;
+                SaveFaction();
+            }
+
             if (missionType == MissionCourier || missionType == MissionRescuePrisoner)
             {
                 if (distance <= 85f && Game.GameTime >= _nextCourierSpawnAttemptAt &&
@@ -105,24 +131,6 @@ namespace EnRAGEPlayerFactionExtension
                 (missionType == MissionHuntAnimal ? 75f : 65f)));
             if (distance > triggerDistance) return;
             if (missionType == MissionStakeout && _faction.MissionWaitProgressMs < 8000) return;
-
-            int processId = Process.GetCurrentProcess().Id;
-            if (_faction.MissionEncounterProcessId != 0 && _faction.MissionEncounterProcessId != processId)
-            {
-                RemoveAllEnemyBlips();
-                _faction.MissionConvoyWagonHandle = 0;
-                _faction.MissionConvoyDriverPedHandle = 0;
-                if (_faction.MissionConvoyEnemyHandles == null)
-                    _faction.MissionConvoyEnemyHandles = new List<int>();
-                else
-                    _faction.MissionConvoyEnemyHandles.Clear();
-                _faction.MissionEncounterSpawned = false;
-                _faction.MissionEncounterProcessId = 0;
-                _spawnFailures = 0;
-                _vehicleSpawnFailures = 0;
-                _courierSpawnFailures = 0;
-                SaveFaction();
-            }
 
             // A stale vehicle handle is not a valid vehicle; clear it so the bounded spawn retry can run.
             if ((missionType == MissionConvoy || missionType == MissionDestroyTarget) &&
@@ -308,6 +316,19 @@ namespace EnRAGEPlayerFactionExtension
             _vehicleSpawnFailures = 0;
             _spawnFailures = 0;
             if (changed) SaveFaction();
+        }
+
+        private bool HasMissionRuntimeHandles()
+        {
+            return _faction.MissionConvoyWagonHandle != 0 ||
+                _faction.MissionConvoyDriverPedHandle != 0 ||
+                _faction.MissionCourierPedHandle != 0 ||
+                _faction.MissionCachePropHandle != 0 ||
+                _faction.MissionCluePropHandle != 0 ||
+                _faction.MissionEncounterSpawned ||
+                (_faction.MissionConvoyEnemyHandles != null && _faction.MissionConvoyEnemyHandles.Count > 0) ||
+                (_faction.MissionScenePropHandles != null &&
+                    _faction.MissionScenePropHandles.Any(handle => handle != 0));
         }
 
         private Vector3 MissionTarget { get { return new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ); } }
