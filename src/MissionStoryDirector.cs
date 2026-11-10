@@ -28,7 +28,6 @@ namespace EnRAGEPlayerFactionExtension
         private bool _combatMusicRequested;
         private int _nextMusicRetryAt;
         private string _activeMusicStopEvent = CombatMusicStop;
-        private int _nextHintFallbackAt;
 
         internal MissionStoryDirector(Action<string> notify)
         {
