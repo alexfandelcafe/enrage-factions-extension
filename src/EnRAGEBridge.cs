@@ -875,7 +875,22 @@ namespace EnRAGEPlayerFactionExtension
                     m.Name == "Has" && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(string));
                 bool kitAlreadyHasCamp = has != null && Convert.ToBoolean(has.Invoke(kit, new object[] { data.CampSiteId }));
                 if (kitAlreadyHasCamp && !forceRefresh)
-                    return true;
+                {
+                    int trackedProps, liveProps;
+                    bool inspected = TryGetCampKitPropCounts(kit, data.CampSiteId, out trackedProps, out liveProps);
+                    bool healthy = inspected && trackedProps > 0 &&
+                        liveProps > 0 && liveProps * 2 >= trackedProps;
+                    if (healthy)
+                        return true;
+
+                    // CampKit.Has only checks its dictionary key. Spawn inserts that key before
+                    // trying to place any props, so a failed placement can look successful forever.
+                    Log.Write("CampKit cache is stale/incomplete for " + data.CampSiteId +
+                        " (tracked=" + (inspected ? trackedProps.ToString() : "unknown") +
+                        ", live=" + (inspected ? liveProps.ToString() : "unknown") +
+                        "); forcing a rebuild.");
+                    forceRefresh = true;
+                }
 
                 // ScriptHook script reloads can invalidate the physical props while enRAGE's
                 // CampKit still remembers the site key. On the first nearby visit in each
@@ -903,14 +918,26 @@ namespace EnRAGEPlayerFactionExtension
                     return false;
                 }
 
+                // CampKit remembers a failed piece key for the whole script lifetime. Clear that
+                // failure cache before every genuine spawn attempt so transient streaming/model
+                // failures can recover without requiring a script reload.
+                ClearCampKitFailedPieceCache(kit);
                 spawn.Invoke(kit, new object[] { site, data.Id, false });
                 bool spawned = has == null || Convert.ToBoolean(has.Invoke(kit, new object[] { data.CampSiteId }));
-                if (!spawned)
+                int trackedAfterSpawn, liveAfterSpawn;
+                bool inspectedAfterSpawn = TryGetCampKitPropCounts(kit, data.CampSiteId,
+                    out trackedAfterSpawn, out liveAfterSpawn);
+                if (!spawned || !inspectedAfterSpawn || trackedAfterSpawn <= 0 || liveAfterSpawn <= 0)
                 {
-                    error = "CampKit no registró el montaje del campamento; se volverá a intentar.";
+                    error = "CampKit registró la ubicación, pero no dejó objetos físicos activos (tracked=" +
+                        (inspectedAfterSpawn ? trackedAfterSpawn.ToString() : "unknown") + ", live=" +
+                        (inspectedAfterSpawn ? liveAfterSpawn.ToString() : "unknown") +
+                        "). Se volverá a intentar cuando la colisión esté cargada.";
+                    Log.Write("CampKit spawn incomplete for " + data.CampSiteId + ": " + error);
                     return false;
                 }
-                Log.Write("Native CampKit spawned physical camp props for " + data.CampSiteId + " near the player.");
+                Log.Write("Native CampKit spawned physical camp props for " + data.CampSiteId +
+                    " near the player (live=" + liveAfterSpawn + ").");
                 return true;
             }
             catch (Exception ex)
@@ -921,6 +948,50 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
+
+        private bool TryGetCampKitPropCounts(object kit, string siteId, out int trackedCount, out int liveCount)
+        {
+            trackedCount = 0;
+            liveCount = 0;
+            try
+            {
+                IDictionary kits = GetField(kit, "_kits") as IDictionary;
+                if (kits == null || !kits.Contains(siteId)) return false;
+                IEnumerable handles = kits[siteId] as IEnumerable;
+                if (handles == null) return false;
+
+                foreach (object rawHandle in handles)
+                {
+                    if (rawHandle == null) continue;
+                    int handle;
+                    try { handle = Convert.ToInt32(rawHandle); }
+                    catch { continue; }
+                    if (handle == 0) continue;
+                    trackedCount++;
+                    try { if (ENTITY.DOES_ENTITY_EXIST(handle)) liveCount++; }
+                    catch { }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Log.Write("CampKit object integrity check warning: " + Unwrap(ex));
+                return false;
+            }
+        }
+
+        private void ClearCampKitFailedPieceCache(object kit)
+        {
+            try
+            {
+                object failedPieces = GetField(kit, "_logged");
+                if (failedPieces == null) return;
+                MethodInfo clear = failedPieces.GetType().GetMethod("Clear", InstanceFlags,
+                    null, Type.EmptyTypes, null);
+                if (clear != null) clear.Invoke(failedPieces, null);
+            }
+            catch (Exception ex) { Log.Write("CampKit failed-piece cache reset warning: " + Unwrap(ex)); }
+        }
 
         /// <summary>
         /// Replaces the player's native CampKit look according to the currently displayed
