@@ -471,6 +471,7 @@ Ante un problema:
 - La configuración física del campamento se reconstruye cuando el jugador se acerca y la colisión del terreno está cargada.
 - Las ubicaciones de misión todavía se generan alrededor del campamento con una selección geométrica y validación de terreno; no hay aún una base de puntos narrativos curados por región.
 - La carreta móvil depende de que RDR2 acepte la tarea de conducción y el nodo vial elegido. La alternativa estacionaria mantiene el objetivo jugable si esa tarea no se inicia.
+- Esta primera iteración todavía no crea un tiro de caballos unido a la carreta ni una lista curada de ubicaciones por región; las misiones usan nodos viales/terreno generados y los enemigos dependen de la IA de combate nativa, sin una rutina explícita de flanqueo.
 
 ---
 
