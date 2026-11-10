@@ -23,7 +23,7 @@ Los contratos comparten ahora un controlador de narrativa, interacción y encuen
 
 ### Cinemáticas contextuales y animación diegética (v0.5.2)
 
-Las misiones usan ahora escenas breves con cámara programada y escenarios nativos de RDR2. No son vídeos ni secuencias cinemáticas externas: el personaje sigue estando en el mundo del juego, con transición de cámara suave y una animación contextual.
+Las misiones usan ahora escenas breves con cámara programada y escenarios nativos de RDR2. No son vídeos ni secuencias cinemáticas externas: el personaje sigue estando en el mundo del juego, con transición de cámara suave y una animación contextual. En las escenas de llegada, primero gira hacia el punto observado y después inicia el escenario.
 
 - **Reconocimiento:** al examinar un indicio, el jugador se detiene a tomar notas; la cámara recorre brevemente el punto observado.
 - **Patrulla:** tomar notas en los controles relevantes refuerza la lectura de cada observación antes de avanzar al siguiente punto.
