@@ -379,6 +379,8 @@ El archivo `camps.json` pertenece al sistema de campamentos de enRAGE y también
 - La extensión vuelve a registrar la facción y busca su `CampSite`.
 - Cuando el sitio está restaurado, vuelve a crear el marcador del campamento.
 - Al acercarse a menos de 140 metros, y cuando la colisión está lista, restaura los objetos físicos del `CampKit`.
+- Verifica que la caché de enRAGE corresponda a objetos físicos vivos; si el campamento figura como creado pero sus objetos desaparecieron o el montaje quedó vacío, fuerza una reconstrucción y vuelve a intentarlo sin recargar scripts.
+- Limpia la caché interna de piezas cuyo modelo falló temporalmente para permitir un nuevo intento de creación.
 - Se intenta recuperar el administrador existente y se reconstruye la asociación de miembros con Companion.
 
 Los handles de NPC solo son referencias temporales válidas durante el mismo proceso del juego. Al iniciar un proceso nuevo de RDR2 se descartan esos handles para evitar enlazar por error una entidad distinta; los IDs persistentes del roster no se descartan.
