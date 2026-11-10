@@ -96,6 +96,8 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 61)] public bool MissionTargetHasRoadNode { get; set; }
         // Visible/interactive map prop for reconnaissance, patrol and wolf-tracking clues.
         [DataMember(Order = 62)] public int MissionCluePropHandle { get; set; }
+        // Mission-site set dressing props, stored by slot and validated against model/position on reuse.
+        [DataMember(Order = 63)] public List<int> MissionScenePropHandles { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -159,6 +161,8 @@ namespace EnRAGEPlayerFactionExtension
                         data.MissionTargetHasRoadNode = false;
                     }
                     if (data.SchemaVersion < 20) data.MissionCluePropHandle = 0;
+                    if (data.MissionScenePropHandles == null) data.MissionScenePropHandles = new List<int>();
+                    if (data.SchemaVersion < 21) data.MissionScenePropHandles.Clear();
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -168,7 +172,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(20, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(21, data.SchemaVersion);
                     return data;
                 }
             }
@@ -225,7 +229,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 20,
+                SchemaVersion = 21,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -265,6 +269,7 @@ namespace EnRAGEPlayerFactionExtension
                 MissionTargetHeading = 0f,
                 MissionTargetHasRoadNode = false,
                 MissionCluePropHandle = 0,
+                MissionScenePropHandles = new List<int>(),
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
