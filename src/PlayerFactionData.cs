@@ -100,6 +100,8 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 63)] public List<int> MissionScenePropHandles { get; set; }
         // Optional-objective bonus percent, persisted so the award survives a script reload.
         [DataMember(Order = 64)] public int MissionOptionalBonusPercent { get; set; }
+        // Process-scoped driver ped for the moving convoy; validated against the expected model and wagon.
+        [DataMember(Order = 65)] public int MissionConvoyDriverPedHandle { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -166,6 +168,7 @@ namespace EnRAGEPlayerFactionExtension
                     if (data.MissionScenePropHandles == null) data.MissionScenePropHandles = new List<int>();
                     if (data.SchemaVersion < 21) data.MissionScenePropHandles.Clear();
                     if (data.SchemaVersion < 22) data.MissionOptionalBonusPercent = 0;
+                    if (data.SchemaVersion < 23) data.MissionConvoyDriverPedHandle = 0;
                     data.MissionOptionalBonusPercent = Math.Max(0, Math.Min(50, data.MissionOptionalBonusPercent));
                     if (!data.SettingsInitialized)
                     {
@@ -176,7 +179,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(22, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(23, data.SchemaVersion);
                     return data;
                 }
             }
@@ -233,7 +236,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 22,
+                SchemaVersion = 23,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -275,6 +278,7 @@ namespace EnRAGEPlayerFactionExtension
                 MissionCluePropHandle = 0,
                 MissionScenePropHandles = new List<int>(),
                 MissionOptionalBonusPercent = 0,
+                MissionConvoyDriverPedHandle = 0,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
