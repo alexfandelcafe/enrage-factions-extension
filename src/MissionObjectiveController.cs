@@ -308,7 +308,9 @@ namespace EnRAGEPlayerFactionExtension
             if (_faction.MissionConvoyEnemyHandles == null) _faction.MissionConvoyEnemyHandles = new List<int>();
             else _faction.MissionConvoyEnemyHandles.Clear();
             _faction.MissionEncounterSpawned = false;
-            _faction.MissionEncounterProcessId = 0;
+            _faction.MissionEncounterProcessId = preserveCourier && _faction.MissionCourierPedHandle != 0
+                ? Process.GetCurrentProcess().Id
+                : 0;
             _missingEnemySince.Clear();
             _lostEnemyHandles.Clear();
             _nextSpawnAttemptAt = 0;
