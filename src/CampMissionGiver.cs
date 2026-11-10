@@ -98,6 +98,8 @@ namespace EnRAGEPlayerFactionExtension
         private bool _missionTimerInitialized;
         private int _nextStakeoutStatusAt;
         private bool _rescueReleaseCinematicPending;
+        private int _cinematicEncounterDeferStartedAt;
+        private string _cinematicEncounterDeferKey = string.Empty;
         private bool _promptArmed = true;
 
         internal CampMissionGiver(EnRAGEBridge bridge, PlayerFactionData faction)
@@ -113,6 +115,7 @@ namespace EnRAGEPlayerFactionExtension
             if (!_faction.Founded || string.IsNullOrWhiteSpace(_faction.CampSiteId))
             {
                 _rescueReleaseCinematicPending = false;
+                ResetCinematicEncounterDeferral();
                 DeleteSupplyCacheProp();
                 DeleteMissionClueProp();
                 CleanupMissionSceneProps();
@@ -1146,6 +1149,8 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionType = MissionCatalog.SelectNext(_faction.MissionsCompleted,
                 _faction.LastMissionType, _faction.MissionDifficulty, missionRandom);
             // Optional objectives: hold the stakeout perimeter, or finish the hideout/sabotage without alerting guards.
+            ResetCinematicEncounterDeferral();
+            _rescueReleaseCinematicPending = false;
             _faction.MissionOptionalBonusPercent =
                 (_faction.MissionType == MissionStakeout ||
                  _faction.MissionType == MissionEliminateTargets ||
@@ -1578,22 +1583,62 @@ namespace EnRAGEPlayerFactionExtension
             Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
             float distance = player.Position.DistanceTo(target);
             string key = MissionCinematicKey("site_intro", missionType);
-            if (_story.HasPlayedCinematic(key) || _objectiveController.EncounterSpawned) return false;
+            if (_story.HasPlayedCinematic(key) || _objectiveController.EncounterSpawned)
+            {
+                ResetCinematicEncounterDeferral();
+                return false;
+            }
 
+            bool withinEncounterRange;
             switch (missionType)
             {
                 case MissionConvoy:
-                    return distance <= 115f && !_objectiveController.TargetVehicleSpawnFailed;
+                    withinEncounterRange = distance <= 115f && !_objectiveController.TargetVehicleSpawnFailed;
+                    break;
                 case MissionEliminateTargets:
                 case MissionRescuePrisoner:
-                    return distance <= 65f;
+                    withinEncounterRange = distance <= 65f;
+                    break;
                 case MissionDestroyTarget:
-                    return distance <= 100f && !_objectiveController.TargetVehicleSpawnFailed;
+                    withinEncounterRange = distance <= 100f && !_objectiveController.TargetVehicleSpawnFailed;
+                    break;
                 case MissionHuntAnimal:
-                    return distance <= 75f;
+                    withinEncounterRange = distance <= 75f;
+                    break;
                 default:
-                    return false;
+                    withinEncounterRange = false;
+                    break;
             }
+
+            if (!withinEncounterRange)
+            {
+                if (string.Equals(_cinematicEncounterDeferKey, key, StringComparison.OrdinalIgnoreCase))
+                    ResetCinematicEncounterDeferral();
+                return false;
+            }
+
+            if (!string.Equals(_cinematicEncounterDeferKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                _cinematicEncounterDeferKey = key;
+                _cinematicEncounterDeferStartedAt = Game.GameTime;
+            }
+            else if (Game.GameTime - _cinematicEncounterDeferStartedAt >= 30000)
+            {
+                // Never keep the contract waiting forever if the player cannot get to a safe camera
+                // position or the staged convoy vehicle never reaches a usable spot.
+                _story.MarkCinematicUnavailable(key);
+                Log.Write("Mission cinematic intro timed out; proceeding with the normal encounter. Key=" + key + ".");
+                ResetCinematicEncounterDeferral();
+                return false;
+            }
+
+            return true;
+        }
+
+        private void ResetCinematicEncounterDeferral()
+        {
+            _cinematicEncounterDeferStartedAt = 0;
+            _cinematicEncounterDeferKey = string.Empty;
         }
 
         private void TryStartMissionSiteCinematic(Ped player)
