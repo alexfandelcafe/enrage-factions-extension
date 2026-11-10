@@ -111,6 +111,8 @@ namespace EnRAGEPlayerFactionExtension
             if (!_faction.Founded || string.IsNullOrWhiteSpace(_faction.CampSiteId))
             {
                 DeleteSupplyCacheProp();
+                DeleteMissionClueProp();
+                CleanupMissionSceneProps();
                 RemoveLootPrompt();
                 RemoveObjectivePrompt();
                 _objectiveController.CleanupConvoy();
@@ -1124,6 +1126,7 @@ namespace EnRAGEPlayerFactionExtension
             RemoveObjectivePrompt();
             _objectiveController.CleanupConvoy();
             CleanupMissionSceneProps();
+            DeleteMissionClueProp();
             if (_faction.MissionCachePropHandle != 0) DeleteSupplyCacheProp();
             Random missionRandom = new Random(unchecked(Game.GameTime * 397 ^ _faction.MissionsCompleted * 7919 ^ _faction.MissionPrestige));
             _faction.MissionDifficulty = MissionCatalog.DetermineDifficulty(_faction.MissionsCompleted, missionRandom);
