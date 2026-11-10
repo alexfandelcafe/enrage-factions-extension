@@ -75,12 +75,13 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 44)] public int MissionWaitProgressMs { get; set; }
         // Runtime entity handle for the visible supply cache; verified against model and coordinates on reconnect.
         [DataMember(Order = 45)] public int MissionCachePropHandle { get; set; }
-        // Convoy handles are process-scoped and validated against model/location before reuse.
+        // Runtime entity handles are process-scoped and validated against model/location before reuse.
         [DataMember(Order = 46)] public int MissionConvoyWagonHandle { get; set; }
         [DataMember(Order = 47)] public List<int> MissionConvoyEnemyHandles { get; set; }
         [DataMember(Order = 48)] public int MissionDifficulty { get; set; }
         [DataMember(Order = 49)] public int LastMissionType { get; set; }
         [DataMember(Order = 50)] public bool MissionEncounterSpawned { get; set; }
+        // Process ID owning this mission's transient world entities (peds, props and wagons).
         [DataMember(Order = 51)] public int MissionEncounterProcessId { get; set; }
         // Process-scoped handover contact used by courier/rescue contracts; validated by model and position.
         [DataMember(Order = 52)] public int MissionCourierPedHandle { get; set; }
