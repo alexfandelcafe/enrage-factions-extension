@@ -1657,14 +1657,6 @@ namespace EnRAGEPlayerFactionExtension
                     return false;
                 }
 
-                MethodInfo saveWorld = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
-                    m.Name == "SaveWorld" && m.GetParameters().Length == 0);
-                if (saveWorld == null)
-                {
-                    error = "No se encontró SaveWorld; se evita aplicar una recompensa que no pueda persistirse.";
-                    return false;
-                }
-
                 int currentSupplies = supplies.Contains(data.Id) ? Convert.ToInt32(supplies[data.Id]) : 0;
                 int currentTreasury = treasury.Contains(data.Id) ? Convert.ToInt32(treasury[data.Id]) : 0;
 
@@ -1676,6 +1668,14 @@ namespace EnRAGEPlayerFactionExtension
                     data.CurrentTreasury = currentTreasury;
                     data.ResourcesInitialized = true;
                     return true;
+                }
+
+                MethodInfo saveWorld = _mainType.GetMethods(InstanceFlags).FirstOrDefault(m =>
+                    m.Name == "SaveWorld" && m.GetParameters().Length == 0);
+                if (saveWorld == null)
+                {
+                    error = "No se encontró SaveWorld; se evita aplicar una recompensa que no pueda persistirse.";
+                    return false;
                 }
 
                 bool resumingPending = string.Equals(data.PendingMissionRewardId, missionRewardId, StringComparison.Ordinal);
