@@ -91,6 +91,9 @@ namespace EnRAGEPlayerFactionExtension
         [DataMember(Order = 57)] public int PendingMissionRewardTreasuryBefore { get; set; }
         [DataMember(Order = 58)] public int PendingMissionRewardSuppliesAfter { get; set; }
         [DataMember(Order = 59)] public int PendingMissionRewardTreasuryAfter { get; set; }
+        // Heading captured from a validated road node for roadside convoy/sabotage objectives.
+        [DataMember(Order = 60)] public float MissionTargetHeading { get; set; }
+        [DataMember(Order = 61)] public bool MissionTargetHasRoadNode { get; set; }
 
         internal static PlayerFactionData Load()
         {
@@ -148,6 +151,11 @@ namespace EnRAGEPlayerFactionExtension
                     }
                     if (data.LastAppliedMissionRewardId == null) data.LastAppliedMissionRewardId = string.Empty;
                     if (data.PendingMissionRewardId == null) data.PendingMissionRewardId = string.Empty;
+                    if (data.SchemaVersion < 19)
+                    {
+                        data.MissionTargetHeading = 0f;
+                        data.MissionTargetHasRoadNode = false;
+                    }
                     if (!data.SettingsInitialized)
                     {
                         // Migrate v0.2.x saves to the values used by the previous hard-coded setup.
@@ -157,7 +165,7 @@ namespace EnRAGEPlayerFactionExtension
                         data.AllowAnswersGunfire = false;
                         data.SettingsInitialized = true;
                     }
-                    data.SchemaVersion = Math.Max(18, data.SchemaVersion);
+                    data.SchemaVersion = Math.Max(19, data.SchemaVersion);
                     return data;
                 }
             }
@@ -214,7 +222,7 @@ namespace EnRAGEPlayerFactionExtension
                 CampSiteId = string.Empty,
                 CampRegion = string.Empty,
                 RosterContributions = new Dictionary<string, int>(),
-                SchemaVersion = 18,
+                SchemaVersion = 19,
                 RankLabels = new string[0],
                 CampRosterPedHandles = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase),
                 CampRosterPedProcessId = 0,
@@ -251,6 +259,8 @@ namespace EnRAGEPlayerFactionExtension
                 PendingMissionRewardTreasuryBefore = 0,
                 PendingMissionRewardSuppliesAfter = 0,
                 PendingMissionRewardTreasuryAfter = 0,
+                MissionTargetHeading = 0f,
+                MissionTargetHasRoadNode = false,
                 ConfirmedRecruitIds = new List<string>(),
                 CampVisualTier = -1,
                 RegardOffsets = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
