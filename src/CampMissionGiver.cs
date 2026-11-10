@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -135,6 +136,7 @@ namespace EnRAGEPlayerFactionExtension
                 campCentre = new Vector3(_faction.CampX, _faction.CampY, _faction.CampZ);
             if (campCentre == Vector3.Zero) return;
 
+            _objectiveController.ReconcileProcessScopedHandles();
             if (_faction.MissionStage == 1) RefineMissionTargetHeight(player);
 
             if (_faction.MissionStage == 1 && _faction.MissionType == MissionSupplyCache)
@@ -931,6 +933,7 @@ namespace EnRAGEPlayerFactionExtension
                 ENTITY.SET_ENTITY_AS_MISSION_ENTITY(created.Handle, true, true);
                 _missionClueProp = created;
                 _faction.MissionCluePropHandle = created.Handle;
+                _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                 _cluePropSpawnFailures = 0;
                 SaveFaction();
                 Log.Write("Mission clue prop created. Type=" + _faction.MissionType +
@@ -1356,6 +1359,7 @@ namespace EnRAGEPlayerFactionExtension
                 _supplyCache = created;
                 _cacheSpawnFailures = 0;
                 _faction.MissionCachePropHandle = created.Handle;
+                _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                 SaveFaction();
                 Log.Write("Independent mission supply cache created. Handle=" + created.Handle + ", position=" + target + ".");
             }
@@ -1446,6 +1450,7 @@ namespace EnRAGEPlayerFactionExtension
                     }
                     ENTITY.SET_ENTITY_AS_MISSION_ENTITY(created.Handle, true, true);
                     _faction.MissionScenePropHandles[slot] = created.Handle;
+                    _faction.MissionEncounterProcessId = Process.GetCurrentProcess().Id;
                     _scenePropSpawnFailures[slot] = 0;
                     SaveFaction();
                     Log.Write("Mission site prop spawned: " + MissionScenePropModels[slot] +
