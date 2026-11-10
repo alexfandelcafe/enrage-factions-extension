@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using RDR2;
@@ -880,6 +881,9 @@ namespace EnRAGEPlayerFactionExtension
             double angle = baseAngle;
             if (_faction.MissionType == MissionPatrol || _faction.MissionType == MissionReconnaissance)
                 angle += pointIndex * (Math.PI * 2.0 / PatrolWaypointCount);
+            else if (_faction.MissionType == MissionHuntAnimal)
+                // Hunting clues form a compact arc around the search area before the pack spawns.
+                angle += pointIndex * (Math.PI / 12.0);
 
             float radius = _faction.MissionType == MissionStakeout ? 235f :
                 (_faction.MissionType == MissionPatrol ? 285f :
@@ -944,6 +948,7 @@ namespace EnRAGEPlayerFactionExtension
             switch (faction.MissionType)
             {
                 case MissionPatrol: return "Patrulla: punto " + (faction.MissionObjectiveIndex + 1) + "/" + PatrolWaypointCount;
+                case MissionReconnaissance: return "Reconocimiento: punto " + (faction.MissionObjectiveIndex + 1) + "/2";
                 case MissionSupplyCache: return "Alijo de provisiones";
                 case MissionStakeout: return "Cruce de vigilancia";
                 case MissionCourier: return "Punto de entrega";
@@ -951,7 +956,9 @@ namespace EnRAGEPlayerFactionExtension
                 case MissionEliminateTargets: return "Escondite enemigo";
                 case MissionDestroyTarget: return "Carro de suministros";
                 case MissionRescuePrisoner: return "Explorador retenido";
-                case MissionHuntAnimal: return "Zona de caza";
+                case MissionHuntAnimal: return faction.MissionObjectiveIndex < 2
+                    ? "Rastros de lobos: señal " + (faction.MissionObjectiveIndex + 1) + "/2"
+                    : "Manada de lobos";
                 default: return "Reconocimiento de ruta";
             }
         }
@@ -959,6 +966,14 @@ namespace EnRAGEPlayerFactionExtension
         private void GetMissionReward(int missionType, out int supplies, out int treasury, out int prestige)
         {
             MissionCatalog.GetRewards(missionType, _faction.MissionDifficulty, out supplies, out treasury, out prestige);
+        }
+
+        private string BuildMissionRewardId()
+        {
+            // Stable for this active mission even if the script reloads between payout and cleanup.
+            return string.Format(CultureInfo.InvariantCulture, "{0}:{1}:{2:R}:{3:R}:{4:R}",
+                _faction.MissionsCompleted + 1, _faction.MissionType,
+                _faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
         }
 
         private void MaintainSupplyCacheProp(Ped player)
@@ -1282,18 +1297,36 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 else if (_faction.MissionType == MissionHuntAnimal)
                 {
-                    if (distance <= 65f && _objectiveController.EncounterSpawned &&
-                        _faction.MissionObjectiveIndex == 0)
+                    if (_faction.MissionObjectiveIndex < 2 && distance <= 24f)
                     {
-                        _faction.MissionObjectiveIndex = 1;
+                        _faction.MissionObjectiveIndex++;
+                        SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
+                        SaveFaction();
+                        RemoveTargetBlip();
+                        EnsureTargetBlip();
+                        _story.OnCheckpoint(_faction.MissionType, _faction.MissionObjectiveIndex);
+                    }
+                    else if (_faction.MissionObjectiveIndex == 2 && distance <= 65f &&
+                        _objectiveController.EncounterSpawned)
+                    {
+                        _faction.MissionObjectiveIndex = 3;
                         SaveFaction();
                         _story.OnEncounterStarted(_faction.MissionType);
                     }
-                    if (distance <= 70f && _objectiveController.AllGuardsDefeated())
-                        AdvanceMissionToReturn("Has abatido a los lobos y despejado la zona de caza.");
-                    else if (distance <= 70f && _objectiveController.EncounterSpawnFailed &&
-                        !_objectiveController.EncounterSpawned)
-                        FailActiveMission("No se pudo localizar a la manada en la zona marcada. El encargo queda cancelado.");
+
+                    if (_faction.MissionObjectiveIndex >= 2 && distance <= 70f &&
+                        _objectiveController.AllGuardsDefeated())
+                    {
+                        string result = _objectiveController.EncounterHadLostTargets
+                            ? "Has seguido los rastros y despejado la zona; algunos lobos se perdieron de vista."
+                            : "Has seguido los rastros, abatido a los lobos y despejado la zona de caza.";
+                        AdvanceMissionToReturn(result);
+                    }
+                    else if (_faction.MissionObjectiveIndex >= 2 && distance <= 70f &&
+                        _objectiveController.EncounterSpawnFailed && !_objectiveController.EncounterSpawned)
+                    {
+                        FailActiveMission("No se pudo localizar a la manada después de varios intentos. El encargo queda cancelado.");
+                    }
                 }
                 else if (_faction.MissionType == MissionStakeout)
                 {
@@ -1492,7 +1525,8 @@ namespace EnRAGEPlayerFactionExtension
             GetMissionReward(_faction.MissionType, out suppliesReward, out treasuryReward, out prestigeReward);
 
             string error;
-            if (!_bridge.AwardMissionResources(_faction, suppliesReward, treasuryReward, out error))
+            string rewardId = BuildMissionRewardId();
+            if (!_bridge.AwardMissionResources(_faction, suppliesReward, treasuryReward, rewardId, out error))
             {
                 Log.Write("Mission reward pending; native faction resources unavailable: " + error);
                 return;
