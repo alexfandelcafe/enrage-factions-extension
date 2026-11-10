@@ -254,7 +254,9 @@ namespace EnRAGEPlayerFactionExtension
                 case 8:
                     return new[] { "RESCATE: Has encontrado el lugar de retención. Neutraliza a los captores y busca al explorador." };
                 case 9:
-                    return new[] { "CAZA: Hay señales recientes de lobos. Mantén la atención; pueden atacar desde varios lados." };
+                    if (objectiveIndex < 2)
+                        return new[] { "RASTREO: Has encontrado una señal. Sigue el siguiente rastro; las huellas empiezan a converger." };
+                    return new[] { "CAZA: Los rastros convergen. La manada debe estar cerca; prepara el arma y revisa los alrededores." };
                 default:
                     return new[] { "CONVOY: Has llegado a la zona. Observa a los escoltas y busca el momento para acercarte." };
             }
