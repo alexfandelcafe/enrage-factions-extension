@@ -1,10 +1,10 @@
-# EnRAGE Player Faction Extension — v0.5.1
+# EnRAGE Player Faction Extension — v0.5.2
 
 Extensión para fundar y administrar una facción propia dentro de **enRAGE** en Red Dead Redemption 2. La banda usa el sistema nativo de facciones, roster, campamentos, territorio y recursos de enRAGE; esta extensión añade el proceso de fundación, la administración, la integración con Companion y la vida cotidiana de los miembros en el campamento.
 
 > Esta guía describe el comportamiento de la rama `feature/camp-mission-giver`. Los cambios de misión deben probarse dentro de RDR2 antes de considerarlos validados en juego.
 
-## Misiones narrativas y encuentros (v0.5.1)
+## Misiones narrativas y encuentros (v0.5.2)
 
 Los contratos comparten ahora un controlador de narrativa, interacción y encuentros:
 
@@ -20,6 +20,21 @@ Los contratos comparten ahora un controlador de narrativa, interacción y encuen
 - **Cazar al depredador:** enfrenta al jugador a una manada de 2–3 lobos. Se desbloquea tras tres encargos.
 - **Narrativa y sonido:** hay líneas de diálogo contextual en subtítulos o notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con limpieza al resolver el encuentro.
 - **Interacciones v0.4.2:** la carreta del convoy usa un prompt ambiental nativo “Saquear cargamento” asociado a la entidad, en lugar de detectar G sin indicar la acción. Los resúmenes iniciales y de transición ya no se envían como avisos enRAGE cuando también hay diálogo por subtítulos. Los eventos de música se preparan antes de activarse y se reintentan si el motor no los acepta en el primer intento.
+
+### Cinemáticas contextuales y animación diegética (v0.5.2)
+
+Las misiones usan ahora escenas breves con cámara programada y escenarios nativos de RDR2. No son vídeos ni secuencias cinemáticas externas: el personaje sigue estando en el mundo del juego, con transición de cámara suave y una animación contextual.
+
+- **Reconocimiento:** al examinar un indicio, el jugador se detiene a tomar notas; la cámara recorre brevemente el punto observado.
+- **Patrulla:** tomar notas en los controles relevantes refuerza la lectura de cada observación antes de avanzar al siguiente punto.
+- **Convoy y sabotaje:** la escena se enfoca en la carreta real y el jugador toma notas antes de que se active el enfrentamiento. En el convoy, la distancia se comprueba contra la posición física de la carreta, no solo contra el marcador vial.
+- **Escondite:** una breve inspección en cuclillas introduce el área antes de que se liberen los enemigos iniciales.
+- **Rastreo de lobos:** cada pista puede examinarse en el suelo; al llegar a la zona final, la cámara barre hacia delante y la manada se genera después de terminar la escena.
+- **Rescate:** una inspección inicial presenta al explorador retenido. Al liberar al NPC, permanece en el sitio durante la escena; solo empieza a seguir al jugador cuando la escena termina o se omite.
+- **Omisión y recuperación:** la escena dura aproximadamente de 2,6 a 6 segundos. Se puede omitir con las acciones Recargar, Aceptar o Atrás. La cámara vuelve al juego y se limpia la tarea del personaje al finalizar, omitir, cancelar el encargo o recargar el script.
+- **Fallback seguro:** las escenas solo se intentan a pie y fuera de combate. Si el jugador está montado, en un vehículo, en combate o la cámara no se puede crear, el contrato continúa sin bloquearse. Se usan escenarios existentes (WORLD_HUMAN_WRITE_NOTEBOOK y WORLD_HUMAN_CROUCH_INSPECT) y una cámara nativa; no se requieren modelos, clips ni archivos externos nuevos.
+
+Estas escenas son una capa diegética ligera, no una secuencia AnimScene de varios personajes sincronizados. Los gestos de inspección y toma de notas son los escenarios del juego; los movimientos de cámara y los tiempos se controlan desde la extensión. La interacción de cortar ataduras se representa con la escena contextual y el traspaso al comportamiento de seguimiento, no con un clip de corte de cuerda específico.
 
 ### Revisión de robustez y objetivos (en desarrollo)
 
