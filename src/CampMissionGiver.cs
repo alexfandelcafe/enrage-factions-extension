@@ -924,6 +924,42 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 catch { }
             }
+            _faction.MissionTargetHeading = 0f;
+            _faction.MissionTargetHasRoadNode = false;
+            bool roadMission = _faction.MissionType == MissionReconnaissance ||
+                _faction.MissionType == MissionPatrol || _faction.MissionType == MissionStakeout ||
+                _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy ||
+                _faction.MissionType == MissionDestroyTarget;
+            if (roadMission)
+            {
+                try
+                {
+                    Vector3 roadNode = Vector3.Zero;
+                    float roadHeading = 0f;
+                    // Project route-based missions onto a nearby usable vehicle/path node where possible.
+                    bool hasRoadNode = PATHFIND.GET_CLOSEST_VEHICLE_NODE_WITH_HEADING(
+                        target.X, target.Y, target.Z, &roadNode, &roadHeading, 1, 3f, 0);
+                    if (hasRoadNode && roadNode != Vector3.Zero)
+                    {
+                        float dx = roadNode.X - target.X;
+                        float dy = roadNode.Y - target.Y;
+                        float horizontalDistance = (float)Math.Sqrt(dx * dx + dy * dy);
+                        float maxVerticalDifference = foundGround ? 22f : 45f;
+                        if (horizontalDistance <= 75f && Math.Abs(roadNode.Z - target.Z) <= maxVerticalDifference)
+                        {
+                            target = new Vector3(roadNode.X, roadNode.Y, roadNode.Z + 0.25f);
+                            _faction.MissionTargetHeading = roadHeading;
+                            _faction.MissionTargetHasRoadNode = true;
+                            foundGround = true;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Write("Mission road-node projection warning; retaining grounded candidate: " + ex.Message);
+                }
+            }
+
             if (!foundGround)
                 STREAMING.REQUEST_COLLISION_AT_COORD(target.X, target.Y, target.Z);
 
@@ -1092,6 +1128,14 @@ namespace EnRAGEPlayerFactionExtension
                     FailActiveMission(_faction.MissionType == MissionRescuePrisoner
                         ? "No se pudo localizar al explorador retenido después de varios intentos. El encargo queda cancelado."
                         : "El contacto no pudo aparecer en el punto de entrega. El encargo queda cancelado.");
+                    return;
+                }
+                if ((_faction.MissionType == MissionConvoy || _faction.MissionType == MissionDestroyTarget) &&
+                    _objectiveController.TargetVehicleSpawnFailed && !_objectiveController.TargetVehicleAvailable)
+                {
+                    FailActiveMission(_faction.MissionType == MissionConvoy
+                        ? "No se pudo colocar la carreta del convoy. El encargo queda cancelado sin recompensa."
+                        : "No se pudo colocar el carro que había que sabotear. El encargo queda cancelado sin recompensa.");
                     return;
                 }
                 bool requiresEnemyGroup = _faction.MissionType == MissionSupplyCache ||
