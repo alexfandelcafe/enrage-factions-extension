@@ -1410,7 +1410,8 @@ namespace EnRAGEPlayerFactionExtension
 
                 if (_faction.MissionType == MissionPatrol)
                 {
-                    if (distance <= 24f)
+                    bool pointRecorded = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3;
+                    if (distance <= 24f && pointRecorded)
                     {
                         if (_faction.MissionObjectiveIndex + 1 < PatrolWaypointCount)
                         {
@@ -1607,7 +1608,8 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 else if (_faction.MissionType == MissionHuntAnimal)
                 {
-                    if (_faction.MissionObjectiveIndex < 2 && distance <= 24f)
+                    bool clueExamined = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3;
+                    if (_faction.MissionObjectiveIndex < 2 && distance <= 24f && clueExamined)
                     {
                         _faction.MissionObjectiveIndex++;
                         SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
@@ -1721,7 +1723,8 @@ namespace EnRAGEPlayerFactionExtension
                             " segundos y confirmado quién utiliza la ruta.");
                 }
                 
-                else if (_faction.MissionType == MissionReconnaissance && distance <= 24f)
+                else if (_faction.MissionType == MissionReconnaissance && distance <= 24f &&
+                    (_objectivePromptJustCompleted || _cluePropSpawnFailures >= 3))
                 {
                     if (_faction.MissionObjectiveIndex == 0)
                     {
