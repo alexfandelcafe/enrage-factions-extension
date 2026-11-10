@@ -21,7 +21,18 @@ Los contratos comparten ahora un controlador de narrativa, interacción y encuen
 - **Narrativa y sonido:** hay líneas de diálogo contextual en subtítulos o notificaciones, orientación de NPC hacia el jugador, sonidos de interfaz y un evento de música de combate del propio juego, con limpieza al resolver el encuentro.
 - **Interacciones v0.4.2:** la carreta del convoy usa un prompt ambiental nativo “Saquear cargamento” asociado a la entidad, en lugar de detectar G sin indicar la acción. Los resúmenes iniciales y de transición ya no se envían como avisos enRAGE cuando también hay diálogo por subtítulos. Los eventos de música se preparan antes de activarse y se reintentan si el motor no los acepta en el primer intento.
 
-Los textos son diálogo contextual escrito por la extensión; no son doblaje original ni nuevas voces grabadas. La música y el comportamiento visual de los subtítulos deben probarse en RDR2. Este entorno permite revisar el código, pero no ejecutar una sesión de juego real.
+### Revisión de robustez y objetivos (en desarrollo)
+
+- **Puntos físicos de objetivo:** reconocimiento y patrulla presentan un mapa/indicio que se inspecciona con prompt contextual; la caza pide examinar dos rastros antes de generar la manada. Si el modelo del indicio no puede crearse tras varios intentos, se conserva una alternativa de proximidad para no bloquear la misión.
+- **Lugares del encuentro:** se valida la altura del terreno cuando la colisión está cargada y, para misiones de ruta, se intenta proyectar el objetivo a un nodo vial cercano. Los escondites y rescates reciben tiendas, cajas y leña como utilería física básica.
+- **Convoy:** cuando se encuentra un nodo vial válido, la carreta se crea más atrás en el camino y se intenta moverla con un conductor nativo hacia el punto de interceptación. El conductor también cuenta como objetivo enemigo. Si no hay un nodo apto o no se puede generar el conductor, el convoy conserva una alternativa estacionaria.
+- **Rescate:** el explorador usa un modelo distinto al contacto de entrega, sigue al jugador después de liberarlo y la recompensa espera a que llegue vivo al campamento. Si muere, desaparece o no puede generarse, la misión se cancela sin recompensa.
+- **Fallos de generación:** los NPCs se generan por intentos acotados; los encuentros parciales pueden aceptarse si aparece al menos un objetivo, pero un encuentro que no consigue generar enemigos no se registra como una victoria normal. Los objetos que no aparecen tienen salida controlada para evitar encargos bloqueados.
+- **Dificultad:** se varían el número y la precisión de los enemigos y, para humanos, el armamento según el nivel.
+- **Objetivos opcionales:** completar la vigilancia sin salir del perímetro mantiene una bonificación del 15%; saquear un convoy con la carreta en buen estado también puede otorgarla. La bonificación afecta recursos y prestigio.
+- **Abandono y recuperación:** cerca del encargado se muestra el prompt adicional “Abandonar encargo” (control Recargar/R). Los handles de entidades temporales se reconcilian entre procesos; las recompensas usan un recibo persistente para no sumarse de nuevo tras una recarga.
+
+Estas mejoras de misión se han revisado estáticamente, pero todavía requieren compilación y pruebas dentro de RDR2. En particular, deben verificarse la navegación del convoy, los prompts contextuales de los indicios y la escolta del explorador. Los textos son diálogo contextual escrito por la extensión; no son doblaje original ni nuevas voces grabadas.
 
 ## Índice
 
@@ -458,6 +469,8 @@ Ante un problema:
 - La materialización de miembros persistidos requiere los datos del roster y la integración de Companion; solo se realiza cuando el campamento está cargado.
 - Las conversaciones ambientales dependen de las líneas y bancos de voz disponibles para cada ped.
 - La configuración física del campamento se reconstruye cuando el jugador se acerca y la colisión del terreno está cargada.
+- Las ubicaciones de misión todavía se generan alrededor del campamento con una selección geométrica y validación de terreno; no hay aún una base de puntos narrativos curados por región.
+- La carreta móvil depende de que RDR2 acepte la tarea de conducción y el nodo vial elegido. La alternativa estacionaria mantiene el objetivo jugable si esa tarea no se inicia.
 
 ---
 
