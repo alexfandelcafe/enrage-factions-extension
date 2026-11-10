@@ -884,10 +884,10 @@ namespace EnRAGEPlayerFactionExtension
                     {
                         Vector3 seatCentre = GetPlayerCampCentre(data);
                         if (seatCentre == Vector3.Zero) seatCentre = position;
-                        int correctedSeats = OrientPlayerCampSeatProps(kit, data.CampSiteId, seatCentre);
+                        int correctedSeats = OrientPlayerCampPropsTowardFire(kit, data.CampSiteId, seatCentre);
                         if (correctedSeats > 0)
-                            Log.Write("Corrected camp-chair orientation for " + data.CampSiteId +
-                                " (" + correctedSeats + " seat props turned toward the fire).");
+                            Log.Write("Corrected camp seating/tent orientation for " + data.CampSiteId +
+                                " (" + correctedSeats + " props turned toward the fire).");
                         return true;
                     }
 
@@ -948,8 +948,8 @@ namespace EnRAGEPlayerFactionExtension
                 if (spawnedSeatCentre == Vector3.Zero) spawnedSeatCentre = position;
                 int alignedSeats = OrientPlayerCampSeatProps(kit, data.CampSiteId, spawnedSeatCentre);
                 if (alignedSeats > 0)
-                    Log.Write("Aligned camp seating toward the fire for " + data.CampSiteId +
-                        " (" + alignedSeats + " seat props turned).");
+                    Log.Write("Aligned camp seating/tents toward the fire for " + data.CampSiteId +
+                        " (" + alignedSeats + " props turned).");
                 Log.Write("Native CampKit spawned physical camp props for " + data.CampSiteId +
                     " near the player (live=" + liveAfterSpawn + ").");
                 return true;
@@ -1007,13 +1007,20 @@ namespace EnRAGEPlayerFactionExtension
                 IEnumerable handles = kits[siteId] as IEnumerable;
                 if (handles == null) return 0;
 
-                HashSet<uint> seatModels = new HashSet<uint>(new[]
+                HashSet<uint> campPropsFacingFire = new HashSet<uint>(new[]
                 {
+                    // Seating models used by the player faction CampKit looks.
                     MISC.GET_HASH_KEY("p_log02x"),
                     MISC.GET_HASH_KEY("p_stool01x"),
                     MISC.GET_HASH_KEY("p_woodenchair01x"),
                     MISC.GET_HASH_KEY("p_chair05x"),
-                    MISC.GET_HASH_KEY("p_bench_log01x")
+                    MISC.GET_HASH_KEY("p_bench_log01x"),
+                    // Tent/shelter models used across the five prestige tiers.
+                    MISC.GET_HASH_KEY("p_tent_leento01x"),
+                    MISC.GET_HASH_KEY("p_ambtentscrub01b"),
+                    MISC.GET_HASH_KEY("p_ambtentgrass01b"),
+                    MISC.GET_HASH_KEY("p_tentarmy01x"),
+                    MISC.GET_HASH_KEY("p_ambtentdirt01x")
                 });
 
                 foreach (object rawHandle in handles)
@@ -1031,12 +1038,13 @@ namespace EnRAGEPlayerFactionExtension
                     uint modelHash;
                     try { modelHash = unchecked((uint)seat.Model.Hash); }
                     catch { continue; }
-                    if (!seatModels.Contains(modelHash)) continue;
+                    if (!campPropsFacingFire.Contains(modelHash)) continue;
 
                     Vector3 at = seat.Position;
-                    // CampKit.Plan's Facing() points these chair models' backs toward the fire.
-                    // Add 180 degrees to that native heading. Calculate an absolute heading so
-                    // repeated integrity checks do not keep turning the chairs back and forth.
+                    // CampKit.Plan's Facing() leaves the front/entrance of these models facing
+                    // away from the fire. Add 180 degrees to point seating and tent entrances
+                    // toward the camp centre. Use an absolute heading so repeated checks are
+                    // idempotent and never turn the props back and forth.
                     float heading = (float)(Math.Atan2(at.X - centre.X, centre.Y - at.Y) * 180.0 / Math.PI + 180.0);
                     heading %= 360f;
                     if (heading < 0f) heading += 360f;
