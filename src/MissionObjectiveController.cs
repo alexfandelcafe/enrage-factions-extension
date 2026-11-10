@@ -24,6 +24,7 @@ namespace EnRAGEPlayerFactionExtension
         private const string ConvoyWagonModel = "wagon02x";
         private const string CourierModel = "U_M_M_RhdBartender_01";
         private const string HuntingAnimalModel = "A_C_Wolf";
+        private const string EnemyBlipStyle = "BLIP_STYLE_ENEMY";
         private static readonly string[] GuardModels = { "G_M_M_UniCriminals_01", "G_M_M_UniCriminals_02", "G_M_M_UniDuster_01" };
         private readonly PlayerFactionData _faction;
         private int _nextSpawnAttemptAt;
@@ -32,6 +33,7 @@ namespace EnRAGEPlayerFactionExtension
         private int _courierSpawnFailures;
         private int _nextVehicleSpawnAttemptAt;
         private int _vehicleSpawnFailures;
+        private readonly Dictionary<int, int> _enemyBlips = new Dictionary<int, int>();
 
         internal MissionObjectiveController(PlayerFactionData faction) { _faction = faction; }
 
@@ -60,6 +62,7 @@ namespace EnRAGEPlayerFactionExtension
             Vector3 target = MissionTarget;
             if (target == Vector3.Zero) return;
 
+            MaintainEnemyBlips(target);
             int missionType = _faction.MissionType;
             float distance = player.Position.DistanceTo(target);
 
@@ -91,6 +94,7 @@ namespace EnRAGEPlayerFactionExtension
             int processId = Process.GetCurrentProcess().Id;
             if (_faction.MissionEncounterProcessId != 0 && _faction.MissionEncounterProcessId != processId)
             {
+                RemoveAllEnemyBlips();
                 _faction.MissionConvoyWagonHandle = 0;
                 if (_faction.MissionConvoyEnemyHandles == null)
                     _faction.MissionConvoyEnemyHandles = new List<int>();
@@ -185,9 +189,10 @@ namespace EnRAGEPlayerFactionExtension
         internal void CleanupConvoy()
         {
             bool changed = _faction.MissionConvoyWagonHandle != 0 ||
-                _faction.MissionCourierPedHandle != 0 ||
+                _faction.MissionCourierPedHandle != 0 || _enemyBlips.Count > 0 ||
                 (_faction.MissionConvoyEnemyHandles != null && _faction.MissionConvoyEnemyHandles.Count > 0) ||
                 _faction.MissionEncounterSpawned || _faction.MissionEncounterProcessId != 0;
+            RemoveAllEnemyBlips();
             Vector3 target = MissionTarget;
             Vehicle wagon = ResolveWagon(target, 250f);
             Ped courier = ResolveCourier(target);
@@ -278,6 +283,7 @@ namespace EnRAGEPlayerFactionExtension
 
                     ENTITY.SET_ENTITY_AS_MISSION_ENTITY(targetPed.Handle, true, true);
                     _faction.MissionConvoyEnemyHandles.Add(targetPed.Handle);
+                    EnsureEnemyBlip(targetPed);
                     if (hunting)
                     {
                         targetPed.Task.Combat(player, -1);
@@ -291,6 +297,91 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 catch (Exception ex) { Log.Write("Mission target spawn warning for " + modelName + ": " + ex.Message); }
             }
+        }
+
+        private void MaintainEnemyBlips(Vector3 target)
+        {
+            List<int> staleHandles = new List<int>();
+            foreach (KeyValuePair<int, int> entry in _enemyBlips)
+            {
+                bool stillTracked = false;
+                if (_faction.MissionConvoyEnemyHandles != null)
+                {
+                    foreach (int handle in _faction.MissionConvoyEnemyHandles)
+                    {
+                        if (handle == entry.Key) { stillTracked = true; break; }
+                    }
+                }
+
+                Ped guard = stillTracked ? ResolveGuard(entry.Key, target) : null;
+                if (!stillTracked || guard == null || !guard.Exists() || guard.IsDead || !EnemyBlipExists(entry.Value))
+                {
+                    RemoveEnemyBlip(entry.Value);
+                    staleHandles.Add(entry.Key);
+                }
+            }
+
+            foreach (int staleHandle in staleHandles) _enemyBlips.Remove(staleHandle);
+            if (_faction.MissionConvoyEnemyHandles == null) return;
+
+            foreach (int handle in _faction.MissionConvoyEnemyHandles)
+            {
+                if (_enemyBlips.ContainsKey(handle)) continue;
+                Ped guard = ResolveGuard(handle, target);
+                if (guard != null && guard.Exists() && !guard.IsDead)
+                    EnsureEnemyBlip(guard);
+            }
+        }
+
+        private void EnsureEnemyBlip(Ped guard)
+        {
+            if (guard == null || !guard.Exists() || guard.IsDead) return;
+            int existing;
+            if (_enemyBlips.TryGetValue(guard.Handle, out existing) && EnemyBlipExists(existing)) return;
+
+            try
+            {
+                uint styleHash = MISC.GET_HASH_KEY(EnemyBlipStyle);
+                int blip = MAP.BLIP_ADD_FOR_ENTITY(styleHash, guard.Handle);
+                if (blip == 0 || !MAP.DOES_BLIP_EXIST(blip))
+                {
+                    Log.Write("Mission enemy blip creation returned no handle for ped " + guard.Handle + ".");
+                    return;
+                }
+
+                _enemyBlips[guard.Handle] = blip;
+                Log.Write("Mission enemy blip created. Ped=" + guard.Handle + ", blip=" + blip + ".");
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Mission enemy blip creation warning for ped " + guard.Handle + ": " + ex.Message);
+            }
+        }
+
+        private bool EnemyBlipExists(int handle)
+        {
+            try { return handle != 0 && MAP.DOES_BLIP_EXIST(handle); }
+            catch { return false; }
+        }
+
+        private unsafe void RemoveEnemyBlip(int handle)
+        {
+            if (handle == 0) return;
+            try
+            {
+                if (!MAP.DOES_BLIP_EXIST(handle)) return;
+                int nativeHandle = handle;
+                MAP.REMOVE_BLIP(&nativeHandle);
+            }
+            catch (Exception ex) { Log.Write("Mission enemy blip cleanup warning: " + ex.Message); }
+        }
+
+        private void RemoveAllEnemyBlips()
+        {
+            if (_enemyBlips.Count == 0) return;
+            List<int> blips = new List<int>(_enemyBlips.Values);
+            _enemyBlips.Clear();
+            foreach (int blip in blips) RemoveEnemyBlip(blip);
         }
 
         private bool EnsureCourier(Vector3 target, Ped player)
