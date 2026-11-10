@@ -75,6 +75,8 @@ namespace EnRAGEPlayerFactionExtension
         internal void CancelCinematic()
         {
             CleanupCinematic(true);
+            _dialogue.Clear();
+            _nextDialogueAt = 0;
         }
 
         /// <summary>
