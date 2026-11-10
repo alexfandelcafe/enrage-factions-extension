@@ -22,6 +22,9 @@ namespace EnRAGEPlayerFactionExtension
         private const int MissionRescuePrisoner = 8;
         private const int MissionHuntAnimal = 9;
         private const string ConvoyWagonModel = "wagon02x";
+        private const string ConvoyDriverModel = "G_M_M_UniCriminals_02";
+        private const ulong TaskEnterVehicleHash = 0xC20E50AA46D09CA8UL;
+        private const ulong TaskVehicleDriveToCoordHash = 0xE2A2AA2F659D77A7UL;
         private const string CourierModel = "U_M_M_RhdBartender_01";
         // Use a dedicated prisoner model for the rescue contract rather than reusing the courier.
         private const string PrisonerModel = "U_M_M_AsbPrisoner_01";
@@ -35,6 +38,9 @@ namespace EnRAGEPlayerFactionExtension
         private int _courierSpawnFailures;
         private int _nextVehicleSpawnAttemptAt;
         private int _vehicleSpawnFailures;
+        private int _nextConvoyDriverSpawnAt;
+        private int _convoyDriverSpawnFailures;
+        private int _nextConvoyDriverTaskAt;
         private readonly Dictionary<int, int> _enemyBlips = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _missingEnemySince = new Dictionary<int, int>();
         private readonly HashSet<int> _lostEnemyHandles = new HashSet<int>();
@@ -105,6 +111,7 @@ namespace EnRAGEPlayerFactionExtension
             {
                 RemoveAllEnemyBlips();
                 _faction.MissionConvoyWagonHandle = 0;
+                _faction.MissionConvoyDriverPedHandle = 0;
                 if (_faction.MissionConvoyEnemyHandles == null)
                     _faction.MissionConvoyEnemyHandles = new List<int>();
                 else
@@ -117,6 +124,14 @@ namespace EnRAGEPlayerFactionExtension
                 SaveFaction();
             }
 
+            // A stale vehicle handle is not a valid vehicle; clear it so the bounded spawn retry can run.
+            if ((missionType == MissionConvoy || missionType == MissionDestroyTarget) &&
+                _faction.MissionConvoyWagonHandle != 0 && ResolveWagon(target, 250f) == null)
+            {
+                _faction.MissionConvoyWagonHandle = 0;
+                SaveFaction();
+            }
+
             // Retry vehicle creation independently from enemy creation.
             if ((missionType == MissionConvoy || missionType == MissionDestroyTarget) &&
                 _faction.MissionConvoyWagonHandle == 0 && _vehicleSpawnFailures < 3 &&
@@ -125,6 +140,13 @@ namespace EnRAGEPlayerFactionExtension
                 _nextVehicleSpawnAttemptAt = Game.GameTime + 5000;
                 if (EnsureWagon(target)) _vehicleSpawnFailures = 0;
                 else _vehicleSpawnFailures++;
+            }
+
+            if (missionType == MissionConvoy)
+            {
+                Vehicle convoyWagon = ResolveWagon(target, 250f);
+                if (convoyWagon != null && convoyWagon.Exists())
+                    MaintainConvoyDriver(target, convoyWagon);
             }
 
             if (_faction.MissionEncounterSpawned || _spawnFailures >= 3 || Game.GameTime < _nextSpawnAttemptAt) return;
@@ -243,15 +265,19 @@ namespace EnRAGEPlayerFactionExtension
         internal void CleanupConvoy(bool preserveCourier = false)
         {
             bool changed = _faction.MissionConvoyWagonHandle != 0 ||
+                _faction.MissionConvoyDriverPedHandle != 0 ||
                 _faction.MissionCourierPedHandle != 0 || _enemyBlips.Count > 0 ||
                 (_faction.MissionConvoyEnemyHandles != null && _faction.MissionConvoyEnemyHandles.Count > 0) ||
                 _faction.MissionEncounterSpawned || _faction.MissionEncounterProcessId != 0;
             RemoveAllEnemyBlips();
             Vector3 target = MissionTarget;
-            Vehicle wagon = ResolveWagon(target, 250f);
+            Vehicle wagon = ResolveWagon(target, 350f);
+            Ped convoyDriver = ResolveConvoyDriver(target, 350f);
             Ped courier = preserveCourier ? null : ResolveCourier(target, 600f);
             try { if (wagon != null && wagon.Exists()) wagon.Delete(); }
             catch (Exception ex) { Log.Write("Convoy wagon cleanup warning: " + ex.Message); }
+            try { if (convoyDriver != null && convoyDriver.Exists()) convoyDriver.Delete(); }
+            catch (Exception ex) { Log.Write("Convoy driver cleanup warning: " + ex.Message); }
             try { if (courier != null && courier.Exists()) courier.Delete(); }
             catch (Exception ex) { Log.Write("Courier cleanup warning: " + ex.Message); }
             if (_faction.MissionConvoyEnemyHandles != null)
@@ -264,6 +290,7 @@ namespace EnRAGEPlayerFactionExtension
                 }
             }
             _faction.MissionConvoyWagonHandle = 0;
+            _faction.MissionConvoyDriverPedHandle = 0;
             if (!preserveCourier) _faction.MissionCourierPedHandle = 0;
             if (_faction.MissionConvoyEnemyHandles == null) _faction.MissionConvoyEnemyHandles = new List<int>();
             else _faction.MissionConvoyEnemyHandles.Clear();
@@ -273,6 +300,9 @@ namespace EnRAGEPlayerFactionExtension
             _lostEnemyHandles.Clear();
             _nextSpawnAttemptAt = 0;
             _nextVehicleSpawnAttemptAt = 0;
+            _nextConvoyDriverSpawnAt = 0;
+            _nextConvoyDriverSpawnFailures = 0;
+            _nextConvoyDriverTaskAt = 0;
             _nextCourierSpawnAttemptAt = 0;
             _courierSpawnFailures = 0;
             _vehicleSpawnFailures = 0;
@@ -299,8 +329,12 @@ namespace EnRAGEPlayerFactionExtension
                 {
                     double roadAngle = _faction.MissionTargetHeading * Math.PI / 180.0;
                     double sideOffset = roadAngle + Math.PI / 2.0;
-                    position = new Vector3(target.X + (float)Math.Cos(sideOffset) * 4.5f,
-                        target.Y + (float)Math.Sin(sideOffset) * 4.5f, target.Z + 0.25f);
+                    float longitudinalOffset = _faction.MissionType == MissionConvoy ? -48f : 0f;
+                    float lateralOffset = _faction.MissionType == MissionConvoy ? 1.2f : 4.5f;
+                    position = new Vector3(
+                        target.X + (float)Math.Cos(roadAngle) * longitudinalOffset + (float)Math.Cos(sideOffset) * lateralOffset,
+                        target.Y + (float)Math.Sin(roadAngle) * longitudinalOffset + (float)Math.Sin(sideOffset) * lateralOffset,
+                        target.Z + 0.25f);
                     heading = (_faction.MissionTargetHeading % 360f + 360f) % 360f;
                 }
                 else
@@ -313,6 +347,7 @@ namespace EnRAGEPlayerFactionExtension
                 Vehicle wagon = World.CreateVehicle(wagonHash, position, heading);
                 if (wagon == null || !wagon.Exists()) { Log.Write("Mission target wagon could not be created at " + position + "."); return false; }
                 ENTITY.SET_ENTITY_AS_MISSION_ENTITY(wagon.Handle, true, true);
+                try { VEHICLE.SET_VEHICLE_ON_GROUND_PROPERLY(wagon.Handle, false); } catch { }
                 _faction.MissionConvoyWagonHandle = wagon.Handle;
                 SaveFaction();
                 Log.Write("Mission target wagon spawned for contract " + _faction.MissionType + ". Handle=" + wagon.Handle + ".");
@@ -329,6 +364,108 @@ namespace EnRAGEPlayerFactionExtension
             if (missionType == MissionDestroyTarget || missionType == MissionRescuePrisoner ||
                 missionType == MissionConvoy || missionType == MissionStakeout) return 2 + difficulty;
             return 2 + Math.Min(1, difficulty);
+        }
+
+        private Ped ResolveConvoyDriver(Vector3 target, float maxDistance = 250f)
+        {
+            if (_faction.MissionConvoyDriverPedHandle == 0 || target == Vector3.Zero) return null;
+            try
+            {
+                Ped driver = new Ped(_faction.MissionConvoyDriverPedHandle);
+                if (driver.Exists() &&
+                    unchecked((uint)driver.Model.Hash) == MISC.GET_HASH_KEY(ConvoyDriverModel) &&
+                    driver.Position.DistanceTo(target) <= maxDistance)
+                    return driver;
+            }
+            catch { }
+            return null;
+        }
+
+        private void MaintainConvoyDriver(Vector3 target, Vehicle wagon)
+        {
+            if (wagon == null || !wagon.Exists() || !_faction.MissionTargetHasRoadNode) return;
+            Ped driver = ResolveConvoyDriver(target, 350f);
+            if (driver == null && _faction.MissionConvoyDriverPedHandle != 0)
+            {
+                _faction.MissionConvoyDriverPedHandle = 0;
+                SaveFaction();
+            }
+            if (driver == null)
+            {
+                if (_convoyDriverSpawnFailures >= 3 || Game.GameTime < _nextConvoyDriverSpawnAt) return;
+                _nextConvoyDriverSpawnAt = Game.GameTime + 3500;
+                try
+                {
+                    uint hash = MISC.GET_HASH_KEY(ConvoyDriverModel);
+                    PedHash pedHash = (PedHash)Enum.ToObject(typeof(PedHash), hash);
+                    Model model = new Model(pedHash);
+                    if (!model.IsValid || !model.IsPed || (!model.IsLoaded && !model.Request(1200)))
+                    {
+                        _convoyDriverSpawnFailures++;
+                        Log.Write("Convoy driver model unavailable (attempt " + _convoyDriverSpawnFailures + ").");
+                        return;
+                    }
+                    Vector3 start = wagon.Position;
+                    Ped created = World.CreatePed(pedHash,
+                        new Vector3(start.X + 1.8f, start.Y + 1.8f, start.Z + 0.2f),
+                        _faction.MissionTargetHeading);
+                    if (created == null || !created.Exists())
+                    {
+                        _convoyDriverSpawnFailures++;
+                        Log.Write("Convoy driver ped could not be created (attempt " + _convoyDriverSpawnFailures + ").");
+                        return;
+                    }
+                    ENTITY.SET_ENTITY_AS_MISSION_ENTITY(created.Handle, true, true);
+                    created.BlockPermanentEvents = true;
+                    created.Accuracy = 15;
+                    _faction.MissionConvoyDriverPedHandle = created.Handle;
+                    driver = created;
+                    SaveFaction();
+                    Log.Write("Moving convoy driver spawned. Handle=" + created.Handle + ", wagon=" + wagon.Handle + ".");
+                }
+                catch (Exception ex)
+                {
+                    _convoyDriverSpawnFailures++;
+                    Log.Write("Convoy driver spawn warning (attempt " + _convoyDriverSpawnFailures + "): " + ex.Message);
+                    return;
+                }
+            }
+
+            if (driver == null || !driver.Exists() || driver.IsDead) return;
+            if (Game.GameTime < _nextConvoyDriverTaskAt) return;
+            _nextConvoyDriverTaskAt = Game.GameTime + 2500;
+            try
+            {
+                bool seated = PED.IS_PED_IN_VEHICLE(driver.Handle, wagon.Handle, false);
+                if (!seated)
+                {
+                    Function.Call(TaskEnterVehicleHash, new InputArgument[]
+                    {
+                        driver.Handle, wagon.Handle, 10000, -1, 1.0f, 1, 0
+                    });
+                    return;
+                }
+
+                double roadAngle = _faction.MissionTargetHeading * Math.PI / 180.0;
+                Vector3 destination = new Vector3(
+                    target.X + (float)Math.Cos(roadAngle) * 16f,
+                    target.Y + (float)Math.Sin(roadAngle) * 16f,
+                    target.Z);
+                if (wagon.Position.DistanceTo(destination) > 9f)
+                {
+                    Function.Call(TaskVehicleDriveToCoordHash, new InputArgument[]
+                    {
+                        driver.Handle, wagon.Handle, 8.0f,
+                        destination.X, destination.Y, destination.Z,
+                        3.5f, 0, MISC.GET_HASH_KEY(ConvoyWagonModel), 786603
+                    });
+                    Log.Write("Convoy driver ordered along roadside route toward mission point.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Write("Convoy driver task warning: " + ex.Message);
+            }
         }
 
         private void SpawnGuards(Ped player, Vector3 target, int missionType, int startIndex, int desired)
