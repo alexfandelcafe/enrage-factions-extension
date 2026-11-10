@@ -699,9 +699,11 @@ namespace EnRAGEPlayerFactionExtension
                 prisoner.BlockPermanentEvents = false;
                 TASK.CLEAR_PED_TASKS(prisoner.Handle, true, false);
                 // TASK_FOLLOW_TO_OFFSET_OF_ENTITY: escort the freed scout back with the player.
+                // RDR2's native signature places four task flags before the follow offset.
                 Function.Call(0x304AE42E357B8C7EUL, new InputArgument[]
                 {
-                    prisoner.Handle, player.Handle, -0.8f, -1.3f, 0f, 1.0f, -1, 2.0f, true
+                    prisoner.Handle, player.Handle, false, false, false, false,
+                    -0.8f, -1.3f, 0f, 1.0f
                 });
                 Log.Write("Rescued scout released to follow player. Handle=" + prisoner.Handle + ".");
                 return true;
