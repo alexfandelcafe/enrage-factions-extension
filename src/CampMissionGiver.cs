@@ -1136,8 +1136,11 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionDifficulty = MissionCatalog.DetermineDifficulty(_faction.MissionsCompleted, missionRandom);
             _faction.MissionType = MissionCatalog.SelectNext(_faction.MissionsCompleted,
                 _faction.LastMissionType, _faction.MissionDifficulty, missionRandom);
-            // Optional clean-observation bonus for stakeout; leaving after entering cancels it.
-            _faction.MissionOptionalBonusPercent = _faction.MissionType == MissionStakeout ? 15 : 0;
+            // Optional objectives: hold the stakeout perimeter, or finish the hideout/sabotage without alerting guards.
+            _faction.MissionOptionalBonusPercent =
+                (_faction.MissionType == MissionStakeout ||
+                 _faction.MissionType == MissionEliminateTargets ||
+                 _faction.MissionType == MissionDestroyTarget) ? 15 : 0;
             _faction.MissionConvoyWagonHandle = 0;
             _faction.MissionConvoyEnemyHandles.Clear();
             _cacheSpawnFailures = 0;
