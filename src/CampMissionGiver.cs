@@ -98,8 +98,6 @@ namespace EnRAGEPlayerFactionExtension
         private bool _missionTimerInitialized;
         private int _nextStakeoutStatusAt;
         private bool _rescueReleaseCinematicPending;
-        private int _cinematicEncounterDeferStartedAt;
-        private string _cinematicEncounterDeferKey = string.Empty;
         private bool _promptArmed = true;
 
         internal CampMissionGiver(EnRAGEBridge bridge, PlayerFactionData faction)
@@ -115,7 +113,6 @@ namespace EnRAGEPlayerFactionExtension
             if (!_faction.Founded || string.IsNullOrWhiteSpace(_faction.CampSiteId))
             {
                 _rescueReleaseCinematicPending = false;
-                ResetCinematicEncounterDeferral();
                 DeleteSupplyCacheProp();
                 DeleteMissionClueProp();
                 CleanupMissionSceneProps();
@@ -169,16 +166,22 @@ namespace EnRAGEPlayerFactionExtension
                 DeleteMissionClueProp();
                 SaveFaction();
             }
-            bool suppressMissionGuards = ShouldSuppressMissionEncounterForCinematic(player);
             if (_faction.MissionStage == 1 &&
                 (_faction.MissionType == MissionSupplyCache || _faction.MissionType == MissionStakeout ||
                  _faction.MissionType == MissionCourier || _faction.MissionType == MissionConvoy ||
                  _faction.MissionType == MissionEliminateTargets || _faction.MissionType == MissionDestroyTarget ||
                  _faction.MissionType == MissionRescuePrisoner || _faction.MissionType == MissionHuntAnimal))
             {
-                _objectiveController.Maintain(player, suppressMissionGuards);
-                if (suppressMissionGuards)
-                    TryStartMissionSiteCinematic(player);
+                // First prepare non-hostile mission entities (wagon/scout), while briefly
+                // holding only the initial guard spawn. Start a scene only if the player
+                // is actually at the scene point and camera creation succeeds.
+                _objectiveController.Maintain(player, true);
+                TryStartMissionSiteCinematic(player);
+
+                // If no scene started (mounted, combat state, unsupported camera, or too far
+                // from a staged wagon), immediately run the normal encounter path this tick.
+                if (!_story.IsCinematicActive)
+                    _objectiveController.Maintain(player, false);
             }
 
             _story.Tick();
@@ -1149,7 +1152,6 @@ namespace EnRAGEPlayerFactionExtension
             _faction.MissionType = MissionCatalog.SelectNext(_faction.MissionsCompleted,
                 _faction.LastMissionType, _faction.MissionDifficulty, missionRandom);
             // Optional objectives: hold the stakeout perimeter, or finish the hideout/sabotage without alerting guards.
-            ResetCinematicEncounterDeferral();
             _rescueReleaseCinematicPending = false;
             _faction.MissionOptionalBonusPercent =
                 (_faction.MissionType == MissionStakeout ||
@@ -1567,83 +1569,6 @@ namespace EnRAGEPlayerFactionExtension
             }
         }
 
-        private bool ShouldSuppressMissionEncounterForCinematic(Ped player)
-        {
-            if (_faction.MissionStage != 1) return false;
-            int missionType = _faction.MissionType;
-            bool cinematicEncounter = missionType == MissionConvoy || missionType == MissionEliminateTargets ||
-                missionType == MissionDestroyTarget || missionType == MissionRescuePrisoner ||
-                (missionType == MissionHuntAnimal && _faction.MissionObjectiveIndex >= 2);
-            if (!cinematicEncounter) return false;
-
-            // Once a scene is active, keep initial hostiles deferred until the camera is restored.
-            if (_story.IsCinematicActive) return true;
-            if (!IsCinematicPlayerReady(player)) return false;
-
-            Vector3 target = new Vector3(_faction.MissionTargetX, _faction.MissionTargetY, _faction.MissionTargetZ);
-            float distance = player.Position.DistanceTo(target);
-            string key = MissionCinematicKey("site_intro", missionType);
-            if (_story.HasPlayedCinematic(key) || _objectiveController.EncounterSpawned)
-            {
-                ResetCinematicEncounterDeferral();
-                return false;
-            }
-            if (missionType == MissionRescuePrisoner &&
-                _objectiveController.CourierSpawnFailed && !_objectiveController.CourierAvailable)
-                return false;
-
-            bool withinEncounterRange;
-            switch (missionType)
-            {
-                case MissionConvoy:
-                    withinEncounterRange = distance <= 115f && !_objectiveController.TargetVehicleSpawnFailed;
-                    break;
-                case MissionEliminateTargets:
-                case MissionRescuePrisoner:
-                    withinEncounterRange = distance <= 65f;
-                    break;
-                case MissionDestroyTarget:
-                    withinEncounterRange = distance <= 100f && !_objectiveController.TargetVehicleSpawnFailed;
-                    break;
-                case MissionHuntAnimal:
-                    withinEncounterRange = distance <= 75f;
-                    break;
-                default:
-                    withinEncounterRange = false;
-                    break;
-            }
-
-            if (!withinEncounterRange)
-            {
-                if (string.Equals(_cinematicEncounterDeferKey, key, StringComparison.OrdinalIgnoreCase))
-                    ResetCinematicEncounterDeferral();
-                return false;
-            }
-
-            if (!string.Equals(_cinematicEncounterDeferKey, key, StringComparison.OrdinalIgnoreCase))
-            {
-                _cinematicEncounterDeferKey = key;
-                _cinematicEncounterDeferStartedAt = Game.GameTime;
-            }
-            else if (Game.GameTime - _cinematicEncounterDeferStartedAt >= 30000)
-            {
-                // Never keep the contract waiting forever if the player cannot get to a safe camera
-                // position or the staged convoy vehicle never reaches a usable spot.
-                _story.MarkCinematicUnavailable(key);
-                Log.Write("Mission cinematic intro timed out; proceeding with the normal encounter. Key=" + key + ".");
-                ResetCinematicEncounterDeferral();
-                return false;
-            }
-
-            return true;
-        }
-
-        private void ResetCinematicEncounterDeferral()
-        {
-            _cinematicEncounterDeferStartedAt = 0;
-            _cinematicEncounterDeferKey = string.Empty;
-        }
-
         private void TryStartMissionSiteCinematic(Ped player)
         {
             if (_faction.MissionStage != 1 || _story.IsCinematicActive ||
@@ -1772,13 +1697,16 @@ namespace EnRAGEPlayerFactionExtension
 
                 if (_faction.MissionType == MissionPatrol)
                 {
-                    bool pointRecorded = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3;
+                    bool autoRecordedByArrival = distance <= 12f;
+                    bool pointRecorded = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3 || autoRecordedByArrival;
                     if (distance <= 24f && pointRecorded)
                     {
-                        if (_objectivePromptJustCompleted)
+                        if (_objectivePromptJustCompleted || autoRecordedByArrival)
                             _story.TryStartCinematic(
                                 MissionCinematicKey("patrol_observation", MissionPatrol, _faction.MissionObjectiveIndex),
                                 player, target, "WORLD_HUMAN_WRITE_NOTEBOOK", 3500);
+                        if (autoRecordedByArrival && !_objectivePromptJustCompleted)
+                            Log.Write("Patrol checkpoint auto-registered by proximity. Step=" + _faction.MissionObjectiveIndex + ".");
                         if (_faction.MissionObjectiveIndex + 1 < PatrolWaypointCount)
                         {
                             _faction.MissionObjectiveIndex++;
@@ -1991,13 +1919,16 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 else if (_faction.MissionType == MissionHuntAnimal)
                 {
-                    bool clueExamined = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3;
+                    bool autoExaminedByArrival = distance <= 12f;
+                    bool clueExamined = _objectivePromptJustCompleted || _cluePropSpawnFailures >= 3 || autoExaminedByArrival;
                     if (_faction.MissionObjectiveIndex < 2 && distance <= 24f && clueExamined)
                     {
-                        if (_objectivePromptJustCompleted)
+                        if (_objectivePromptJustCompleted || autoExaminedByArrival)
                             _story.TryStartCinematic(
                                 MissionCinematicKey("wolf_track", MissionHuntAnimal, _faction.MissionObjectiveIndex),
                                 player, target, "WORLD_HUMAN_CROUCH_INSPECT", 3600);
+                        if (autoExaminedByArrival && !_objectivePromptJustCompleted)
+                            Log.Write("Wolf track auto-registered by proximity. Step=" + _faction.MissionObjectiveIndex + ".");
                         _faction.MissionObjectiveIndex++;
                         SetMissionTarget(campCentre, _faction.MissionObjectiveIndex);
                         SaveFaction();
@@ -2122,12 +2053,15 @@ namespace EnRAGEPlayerFactionExtension
                 }
                 
                 else if (_faction.MissionType == MissionReconnaissance && distance <= 24f &&
-                    (_objectivePromptJustCompleted || _cluePropSpawnFailures >= 3))
+                    (_objectivePromptJustCompleted || _cluePropSpawnFailures >= 3 || distance <= 12f))
                 {
-                    if (_objectivePromptJustCompleted)
+                    bool autoRecordedByArrival = distance <= 12f;
+                    if (_objectivePromptJustCompleted || autoRecordedByArrival)
                         _story.TryStartCinematic(
                             MissionCinematicKey("recon_observation", MissionReconnaissance, _faction.MissionObjectiveIndex),
                             player, target, "WORLD_HUMAN_WRITE_NOTEBOOK", 3700);
+                    if (autoRecordedByArrival && !_objectivePromptJustCompleted)
+                        Log.Write("Reconnaissance clue auto-registered by proximity. Step=" + _faction.MissionObjectiveIndex + ".");
                     if (_faction.MissionObjectiveIndex == 0)
                     {
                         _faction.MissionObjectiveIndex = 1;
